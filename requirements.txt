@@ -1,0 +1,4 @@
+addict
+numpy
+opencv-contrib-python
+tqdm

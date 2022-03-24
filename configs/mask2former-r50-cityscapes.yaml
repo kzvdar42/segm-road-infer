@@ -1,0 +1,13 @@
+
+model_type: torch
+image_format: rgb
+use_fp16: True
+classes: cityscapes
+config_file: /mnt/c/Users/Vlad/Desktop/ny-guiderails/Mask2Former/configs/cityscapes/semantic-segmentation/maskformer2_R50_bs16_90k.yaml
+opts: []
+weights_path: weights/sem-r50-cityscapes.pkl
+input_shape: [2048, 1024] # width, height
+img_mean: null # Already fused in the model
+img_std: null # Already fused in the model
+batch_size: 6
+num_workers: 4
