@@ -54,14 +54,14 @@ You can run the script using two models, one for ego vehicle mask, other for who
 
 Also, you can manually use the `infer.py` script, here is it's help command:
 ```bash
-usage: Segmentation Inference Script [-h] [--show] [--apply_ego_mask_from APPLY_EGO_MASK_FROM] [--n_skip_frames N_SKIP_FRAMES]
-                                     [--only_ego_vehicle] [--save_vis_to SAVE_VIS_TO]
-                                     [--window_size WINDOW_SIZE [WINDOW_SIZE ...]]
-                                     model_config in_path out_path
+usage: python infer.py [-h] [--show] [--apply_ego_mask_from APPLY_EGO_MASK_FROM] [--n_skip_frames N_SKIP_FRAMES] [--only_ego_vehicle]
+                       [--save_vis_to SAVE_VIS_TO] [--window_size WINDOW_SIZE [WINDOW_SIZE ...]]
+                       model_config in_path out_path
 
 positional arguments:
   model_config          path to the model yaml config
-  in_path               path to input images. Will read all images under this path
+  in_path               path to input folder with images/input videofile. Will either read all images under this path, or load provided
+                        videofile
   out_path              path to save the resulting masks
 
 optional arguments:
@@ -77,6 +77,8 @@ optional arguments:
   --window_size WINDOW_SIZE [WINDOW_SIZE ...]
                         window size for visualization
 ```
+
+> :warning: Inferencing on videofile is currently slow (approximately 2x times slower)
 
 ## Speed Comparison
 Ran test inference on WSL2 CPU: i5-9500 CPU @ 3.00GHz GPU: 2080ti

@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from utils import get_subfolders_with_files, is_image, load_model_config, colorize_pred, apply_mask, create_folder_for_file, get_classes
-from infer_utils import Predictor, ONNXPredictor, DetectronPredictor, ImageDataset
+from infer_utils import Predictor, ONNXPredictor, DetectronPredictor, ImageDataset, VideoDataset, MyDataloader
 
 
 def load_predictor(model_cfg: dict) -> Predictor:
@@ -54,10 +54,27 @@ def save_preds(predictions: List[np.ndarray], metadata: dict, in_base_path: str,
         if not cv2.imwrite(pred_out_path, pred):
             print(f'Didn\'t save!', pred_out_path, type(pred), pred.shape)
 
+
+def index_images(input_folder: str, n_skip_frames: int = None) -> List[str]:
+    # Index images
+    print('Indexing images...')
+    image_paths = get_subfolders_with_files(input_folder, is_image, True)
+    image_paths = list(image_paths)
+    print(f'Found {len(image_paths)} images!')
+    if n_skip_frames > 0:
+        image_paths_ = image_paths
+        image_paths = image_paths[::n_skip_frames]
+        # Keep last image
+        if image_paths_[-1] not in image_paths:
+            image_paths.append(image_paths_[-1])
+        print(f'Skipping {n_skip_frames} images each time, {len(image_paths)} left')
+    return image_paths
+
+
 def get_args():
-    parser = argparse.ArgumentParser('Segmentation Inference Script')
+    parser = argparse.ArgumentParser('python infer.py')
     parser.add_argument('model_config', help='path to the model yaml config')
-    parser.add_argument('in_path', help='path to input images. Will read all images under this path')
+    parser.add_argument('in_path', help='path to input folder with images/input videofile. Will either read all images under this path, or load provided videofile')
     parser.add_argument('out_path', help='path to save the resulting masks')
     parser.add_argument('--show', action='store_true', help='set to visualize predictions')
     parser.add_argument('--apply_ego_mask_from', help='path to ego masks, will load them and apply to predictions')
@@ -96,26 +113,24 @@ if __name__ == '__main__':
                 ego_mask = cv2.imread(ego_mask_path, -1)
         print(f'Indexed ego mask, found {len(img_name_to_ego_mask_paths)}')
 
-
-    # Index images
-    print('Indexing files...')
-    image_paths = get_subfolders_with_files(args.in_path, is_image, True)
-    image_paths = list(image_paths)
-    print(f'Found {len(image_paths)} images!')
-    if args.n_skip_frames > 0:
-        image_paths_ = image_paths
-        image_paths = image_paths[::args.n_skip_frames]
-        # Keep last image
-        if image_paths_[-1] not in image_paths:
-            image_paths.append(image_paths_[-1])
-        print(f'Skipping {args.n_skip_frames} images each time, {len(image_paths)} left')
-
-    # Create dataloader
-    dataset = ImageDataset(image_paths, model_cfg)
-    dataloader = DataLoader(
-        dataset, batch_size=model_cfg.batch_size, pin_memory=True,
-        num_workers=model_cfg.batch_size, collate_fn=dataset.collate_fn,
-    )
+    # Create dataloader (if folder or image -> image dataset, otherwise video)
+    if os.path.isdir(args.in_path) or is_image(args.in_path):
+        args.base_path = os.path.abspath(args.in_path)
+        image_paths = index_images(args.in_path, args.n_skip_frames)
+        dataset = ImageDataset(image_paths, model_cfg)
+        dataloader = DataLoader(
+            dataset, batch_size=model_cfg.batch_size, pin_memory=model_cfg.model_type == 'torch',
+            num_workers=model_cfg.num_workers, collate_fn=dataset.collate_fn,
+            shuffle=False, prefetch_factor=1,
+        )
+    else:
+        args.base_path = os.path.abspath(os.path.split(args.in_path)[0])
+        print('[WARNING] You\'re inferensing on videofile, which is not efficient. It\'s faster to run on images.')
+        dataset = VideoDataset(args.in_path, model_cfg, args.n_skip_frames)
+        print(f'Loaded video, total frames {dataset.len}')
+        if args.n_skip_frames:
+            print(f'Skipping {args.n_skip_frames} frames each time, {len(dataset)} left')
+        dataloader = MyDataloader(dataset, 1) # Batch size has no effect
 
     # Load model
     model = load_predictor(model_cfg)
@@ -135,7 +150,7 @@ if __name__ == '__main__':
                 processed[pred_num] = only_ego_vehicle.astype(np.uint8) * 255
         elif len(img_name_to_ego_mask_paths):
             for pred_num, (pred, meta) in enumerate(zip(processed, metadata)):
-                ego_mask_rel_path = os.path.relpath(meta['image_path'], args.in_path)
+                ego_mask_rel_path = os.path.relpath(meta['image_path'], args.base_path)
                 if ego_mask_rel_path in img_name_to_ego_mask_paths:
                     ego_mask = cv2.imread(img_name_to_ego_mask_paths[ego_mask_rel_path], -1)
                     dataset.img_mask = ego_mask
@@ -148,4 +163,4 @@ if __name__ == '__main__':
                 break  
 
         if args.out_path:
-            save_preds(processed, metadata, args.in_path, args.out_path)
+            save_preds(processed, metadata, args.base_path, args.out_path)

@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 import torch
 import onnxruntime as ort
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 try:
     from turbojpeg import TurboJPEG
     jpeg = TurboJPEG()
@@ -16,35 +16,22 @@ try:
 except:
     use_turbojpeg = False
 
-class ImageDataset(Dataset):
-    
-    def __init__(self, image_paths: List[str], cfg: addict.Dict):
-        self.image_paths = image_paths
+class BaseDataset(Dataset, ABC):
+
+    def __init__(self, cfg: addict.Dict, img_mask=None):
+        self.img_mask = img_mask
         self.image_format = cfg.image_format
         self.input_shape = cfg.input_shape
         self.model_type = cfg.model_type
         self.img_mean = cfg.img_mean
         self.img_std = cfg.img_std
-        self.img_mask = None
         assert self.model_type in ['onnx', 'torch']
         assert self.image_format in ['rgb', 'bgr']
-        
-
-    def __len__(self):
-        return len(self.image_paths)
-    
-    def imread(self, img_path: str) -> np.ndarray:
-        if use_turbojpeg:
-            # TurboJPEG reads in BGR format
-            with open(img_path, 'rb') as in_file:
-                img = jpeg.decode(in_file.read())
-        else:
-            img = cv2.imread(img_path)
-        if self.image_format == "rgb":
-            return img[:, :, ::-1]
-        return img
     
     def preprocess(self, img: np.ndarray) -> np.ndarray:
+        # Convert to RGB if needed
+        if self.image_format == "rgb":
+            img = img[:, :, ::-1]
         # Apply mask if provided
         if self.img_mask is not None:
             img[self.img_mask == 255] = 0
@@ -52,7 +39,9 @@ class ImageDataset(Dataset):
         if self.input_shape is not None:
             img = cv2.resize(img, self.input_shape, interpolation=cv2.INTER_LINEAR)
         # Normalize
-        if self.img_mean is not None:
+        if self.img_mean is not None or self.img_std is not None:
+            self.img_mean = self.img_mean or [0, 0, 0]
+            self.img_std = self.img_std or [1, 1, 1]
             img = (img - self.img_mean) / self.img_std
         img = img.transpose((2, 0, 1)).astype(np.float32)
         if self.model_type == 'torch':
@@ -61,19 +50,6 @@ class ImageDataset(Dataset):
             img = img# / 255
         return img
 
-    def __getitem__(self, index: int):
-        # Get data
-        img_path = self.image_paths[index]
-        
-        # Read and transform the image
-        img = self.imread(img_path)
-        height, width = img.shape[:2]
-        img = self.preprocess(img)
-
-        return {
-            "image": img, "height": height, "width": width, 'image_path': img_path
-        }
-    
     def collate_fn(self, batch):
         images = []
         metadata = []
@@ -90,7 +66,8 @@ class ImageDataset(Dataset):
             images = np.stack(images, 0)
         return images, metadata
     
-    def postprocess(self, preds: List[np.ndarray], metadata: Dict) -> List[np.ndarray]:
+    @classmethod
+    def postprocess(cls, preds: List[np.ndarray], metadata: Dict) -> List[np.ndarray]:
         """Reshape predictions back to original image shape and convert to uint8."""
         processed = []
         assert len(preds) == len(metadata)
@@ -104,6 +81,102 @@ class ImageDataset(Dataset):
             processed.append(pred)
         return processed
 
+
+class ImageDataset(BaseDataset):
+    
+    def __init__(self, image_paths: List[str], cfg: addict.Dict):
+        super().__init__(cfg)
+        self.image_paths = image_paths
+        
+
+    def __len__(self):
+        return len(self.image_paths)
+    
+    def imread(self, img_path: str) -> np.ndarray:
+        if use_turbojpeg:
+            # TurboJPEG reads in BGR format
+            with open(img_path, 'rb') as in_file:
+                return jpeg.decode(in_file.read())
+        return cv2.imread(img_path)
+    
+    def __getitem__(self, index: int):
+        # Get data
+        img_path = self.image_paths[index]
+        
+        # Read and transform the image
+        img = self.imread(img_path)
+        height, width = img.shape[:2]
+        img = self.preprocess(img)
+
+        return {
+            "image": img, "height": height, "width": width, 'image_path': img_path
+        }
+
+
+class VideoDataset(BaseDataset):
+
+    def __init__(self, video_path: str, cfg: addict.Dict, n_skip_frames: int = 0):
+        super().__init__(cfg)
+        self.video_path = video_path
+        self.base_path = os.path.split(video_path)[0]
+        self.cap = cv2.VideoCapture(video_path)
+        self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.len = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.n_skip_frames = n_skip_frames
+    
+    def __len__(self):
+        return int(np.ceil(self.len / max(self.n_skip_frames, 1)))
+    
+    def __getitem__(self, index: int):
+        # Get data
+        # If tries to get not the next frame, set cap pos to right position
+        # index_ = index
+        index = index * max(1, self.n_skip_frames)
+        # print(f'Loading frame {index_} -> {index}')
+        cap_pos = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
+        if cap_pos != index:
+            # print(f'Changing pos from {cap_pos} to {index}!')
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, index)
+            # print(f'Changed pos from {cap_pos} to {index}!')
+        img = self.cap.read()[1]
+        # Add img_path for consistency
+        img_path = os.path.join(self.base_path, f'{index+1:0>6}.jpg')
+        
+        height, width = img.shape[:2]
+        img = self.preprocess(img)
+        return {
+            "image": img, "height": height, "width": width, 'image_path': img_path
+        }
+
+
+class MyDataloader:
+    """Barebone dataloader"""
+
+    def __init__(self, dataset, batch_size):
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.pos = 0
+    
+    def __len__(self):
+        return int(np.ceil(len(self.dataset) / self.batch_size))
+    
+    def __iter__(self):
+        assert self.pos == 0, "Can start only once!"
+        return self
+    
+    def __next__(self):
+        batch = []
+        for _ in range(self.batch_size):
+            if self.pos >= len(self.dataset):
+                if batch:
+                    return self.dataset.collate_fn(batch)
+                else:
+                    raise StopIteration
+            data = self.dataset[self.pos]
+            batch.append(data)
+            self.pos += 1
+        return self.dataset.collate_fn(batch)
 
 class Predictor(ABC):
     """Abstract class for prediction model."""
