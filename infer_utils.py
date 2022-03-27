@@ -75,7 +75,10 @@ class BaseDataset(Dataset, ABC):
             if pred.shape[0] == 1:
                pred = pred[0] 
             if pred.shape[0] != meta['height'] or pred.shape[1] != meta['width']:
-                pred = cv2.resize(pred.astype(np.uint8), (meta['width'], meta['height']))
+                pred = cv2.resize(
+                    pred.astype(np.uint8), (meta['width'], meta['height']),
+                    interpolation=cv2.INTER_NEAREST,
+                )
             else:
                 pred = pred.astype(np.uint8)
             processed.append(pred)
@@ -141,8 +144,8 @@ class VideoDataset(BaseDataset):
             # print(f'Changed pos from {cap_pos} to {index}!')
         img = self.cap.read()[1]
         # Add img_path for consistency
-        img_path = os.path.join(self.base_path, f'{index+1:0>6}.jpg')
-        
+        img_path = os.path.join(self.base_path, f'{index+1:0>5}.jpg')
+
         height, width = img.shape[:2]
         img = self.preprocess(img)
         return {
