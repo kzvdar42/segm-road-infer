@@ -80,6 +80,11 @@ optional arguments:
 
 > :warning: Inferencing on videofile is currently slow (approximately 2x times slower)
 
+## Infer results
+If you ran model on images, the results will copy filenames and structure from input folder, but if you ran the script on videofile, results will be in `%05d.png` format.
+
+Resulting masks will follow class ids from dataset on which model was trained ([class names](#other-info)) starting from 0. If you used `apply_ego_mask_from` flag running the script, masks will also have additional class for `ego vehicle` (it will be the last one).
+
 ## Speed Comparison
 Ran test inference on WSL2 CPU: i5-9500 CPU @ 3.00GHz GPU: 2080ti
 
@@ -105,5 +110,6 @@ Used fp16 (for torch models) and increased batch_size
 | DeepLabV3+	R-101b-D8 | 2.60	| 80.16 | 81.41          | onnx       |
 
 ## Other info
-Classes list for corresponding datasets can be found in `cityscapes-classes.txt` and `mapillary-classes.txt`.
-Only models trained on `mapillary` dataset can be used for ego vehicle mask extraction.
+* Classes list for corresponding datasets can be found in `cityscapes-classes.txt` and `mapillary-classes.txt`.
+
+* Only models trained on `mapillary` dataset can be used for ego vehicle mask extraction.
