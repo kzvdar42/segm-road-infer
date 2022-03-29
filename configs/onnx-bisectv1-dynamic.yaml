@@ -1,7 +1,7 @@
 model_type: onnx
 image_format: rgb
 classes: cityscapes
-weights_path: '/mnt/c/Users/Vlad/Desktop/ny-guiderails/mmsegmentation/bisectv1-dynamic.onnx'
+weights_path: 'weights/bisectv1-dynamic.onnx'
 providers: ['CUDAExecutionProvider', 'CPUExecutionProvider'] # 'TensorrtExecutionProvider'
 input_shape: [2048, 1024] # width, height
 img_mean: [123.675, 116.28, 103.53]
