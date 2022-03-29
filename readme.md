@@ -13,6 +13,8 @@ You can install `PyTurboJPEG` for faster jpeg loading, for this follow instructi
 
 Run `pip install -r requirements.txt` to ensure that all needed packages are installed.
 
+Update model configs with corresponding weights (for all models) and config files (for `mask2former` models).
+
 <!-- To load onnx weights from repo, install [git-lfs](https://git-lfs.github.com/) and run `git lfs pull` -->
 
 ## Configure script
