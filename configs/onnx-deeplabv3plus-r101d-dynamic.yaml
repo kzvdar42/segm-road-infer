@@ -1,0 +1,10 @@
+model_type: onnx
+image_format: rgb
+classes: cityscapes
+weights_path: 'weights/deeplabv3plus-r101b.onnx'
+providers: ['CUDAExecutionProvider', 'CPUExecutionProvider'] # 'TensorrtExecutionProvider'
+input_shape: [2048, 1024] # width, height
+img_mean: [123.675, 116.28, 103.53]
+img_std: [58.395, 57.12, 57.375]
+batch_size: 1
+num_workers: 4
