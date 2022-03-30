@@ -5,14 +5,14 @@ from typing import Callable, Generator
 import addict
 import numpy as np
 
-maskformer_home_path = os.environ.get('MASKFORMER_HOME')
+mask2former_home_path = os.environ.get('MASK2FORMER_HOME')
 
 def load_model_config(cfg_path: str) -> addict.Dict:
     with open(cfg_path, 'r') as in_stream:
         cfg = yaml.safe_load(in_stream)
         if 'config_file' in cfg.keys():
             if not cfg['config_file'].startswith('/'):
-                cfg['config_file'] = os.path.join(maskformer_home_path, cfg['config_file'])
+                cfg['config_file'] = os.path.join(mask2former_home_path, cfg['config_file'])
         return addict.Dict(cfg)
 
 def create_folder_for_file(file_path: str) -> None:
@@ -47,7 +47,7 @@ def get_classes(dataset_type: str):
     elif dataset_type == 'cityscapes':
         with open('cityscapes-classes.txt') as in_file:
             classes = [c.strip() for c in in_file.read().split('\n') if c.strip()]
- `   elif dataset_type == 'mapillary':
+ `  elif dataset_type == 'mapillary':
         with open('mapillary-classes.txt') as in_file:
             classes = [c.strip() for c in in_file.read().split('\n') if c.strip()]
     else:
