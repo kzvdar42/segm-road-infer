@@ -41,7 +41,7 @@ def get_classes(dataset_type: str):
     elif dataset_type == 'cityscapes':
         with open('cityscapes-classes.txt') as in_file:
             classes = [c.strip() for c in in_file.read().split('\n') if c.strip()]
-    elif dataset_type == 'mapillary':
+ `   elif dataset_type == 'mapillary':
         with open('mapillary-classes.txt') as in_file:
             classes = [c.strip() for c in in_file.read().split('\n') if c.strip()]
     else:
@@ -52,7 +52,12 @@ def get_classes(dataset_type: str):
     return classes, cls_name_to_id, cls_id_to_name
 
 
-def cityscapes_palette():
+def cityscapes_palette(grayscale: bool = False):
+    if grayscale:
+        return [[0,  0, 0], [1,  1, 1], [2,  2,  2], [3, 3, 3], [4, 4, 4], 
+                [5, 5, 5], [6, 6, 6], [7, 7, 7], [8, 8, 8], [9, 9, 9], [10, 10, 10],
+                [11, 11, 11], [12, 12, 12], [13, 13, 13], [14, 14, 14], 
+                [15, 15, 15], [16, 16, 16], [17, 17, 17], [18, 18, 18], [19, 19, 19]]
     return [[128, 64, 128], [244, 35, 232], [70, 70, 70], [102, 102, 156],
             [190, 153, 153], [153, 153, 153], [250, 170, 30], [220, 220, 0],
             [107, 142, 35], [152, 251, 152], [70, 130, 180], [220, 20, 60],
@@ -60,7 +65,9 @@ def cityscapes_palette():
             [0, 0, 230], [119, 11, 32], [255, 255, 255]]
 
 
-def ade_palette():
+def ade_palette(grayscale: bool = False):
+    if grayscale:
+        raise Exception('Grayscale ade palette not inplemented, please add.')
     """ADE20K palette for external use."""
     return [[120, 120, 120], [180, 120, 120], [6, 230, 230], [80, 50, 50],
             [4, 200, 3], [120, 120, 80], [140, 140, 140], [204, 5, 255],
@@ -102,8 +109,8 @@ def ade_palette():
             [102, 255, 0], [92, 0, 255]]
 
 
-def colorize_pred(result: np.ndarray) -> np.ndarray:
-    palette = ade_palette() if np.max(result) > 20 else cityscapes_palette()
+def colorize_pred(result: np.ndarray, grayscale: bool) -> np.ndarray:
+    palette = ade_palette(grayscale) if np.max(result) > 20 else cityscapes_palette(grayscale)
     res_img = np.zeros((*result.shape, 3), dtype=np.uint8)
     for cls_idx in np.unique(result):
         res_img[result == cls_idx] = palette[cls_idx]
