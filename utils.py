@@ -5,9 +5,15 @@ from typing import Callable, Generator
 import addict
 import numpy as np
 
+maskformer_home_path = os.environ.get('MASKFORMER_HOME')
+
 def load_model_config(cfg_path: str) -> addict.Dict:
     with open(cfg_path, 'r') as in_stream:
-        return addict.Dict(yaml.safe_load(in_stream))
+        cfg = yaml.safe_load(in_stream)
+        if 'config_file' in cfg.keys():
+            if not cfg['config_file'].startswith('/'):
+                cfg['config_file'] = os.path.join(maskformer_home_path, cfg['config_file'])
+        return addict.Dict(cfg)
 
 def create_folder_for_file(file_path: str) -> None:
     folder_path = os.path.split(file_path)[0]
