@@ -47,7 +47,7 @@ def get_classes(dataset_type: str):
     elif dataset_type == 'cityscapes':
         with open('cityscapes-classes.txt') as in_file:
             classes = [c.strip() for c in in_file.read().split('\n') if c.strip()]
- `  elif dataset_type == 'mapillary':
+    elif dataset_type == 'mapillary':
         with open('mapillary-classes.txt') as in_file:
             classes = [c.strip() for c in in_file.read().split('\n') if c.strip()]
     else:
