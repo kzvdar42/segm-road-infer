@@ -16,6 +16,7 @@ try:
 except:
     use_turbojpeg = False
 
+
 class BaseDataset(Dataset, ABC):
 
     def __init__(self, cfg: addict.Dict, img_mask=None):
@@ -27,7 +28,7 @@ class BaseDataset(Dataset, ABC):
         self.img_std = cfg.img_std
         assert self.model_type in ['onnx', 'torch']
         assert self.image_format in ['rgb', 'bgr']
-    
+
     def preprocess(self, img: np.ndarray) -> np.ndarray:
         # Convert to RGB if needed
         if self.image_format == "rgb":
@@ -65,7 +66,7 @@ class BaseDataset(Dataset, ABC):
         if self.model_type == 'onnx':
             images = np.stack(images, 0)
         return images, metadata
-    
+
     @classmethod
     def postprocess(cls, preds: List[np.ndarray], metadata: Dict) -> List[np.ndarray]:
         """Reshape predictions back to original image shape and convert to uint8."""
@@ -90,22 +91,20 @@ class ImageDataset(BaseDataset):
     def __init__(self, image_paths: List[str], cfg: addict.Dict):
         super().__init__(cfg)
         self.image_paths = image_paths
-        
 
     def __len__(self):
         return len(self.image_paths)
-    
+
     def imread(self, img_path: str) -> np.ndarray:
         if use_turbojpeg:
             # TurboJPEG reads in BGR format
             with open(img_path, 'rb') as in_file:
                 return jpeg.decode(in_file.read())
         return cv2.imread(img_path)
-    
+
     def __getitem__(self, index: int):
-        # Get data
         img_path = self.image_paths[index]
-        
+
         # Read and transform the image
         img = self.imread(img_path)
         height, width = img.shape[:2]
@@ -117,31 +116,29 @@ class ImageDataset(BaseDataset):
 
 
 class VideoDataset(BaseDataset):
-
     def __init__(self, video_path: str, cfg: addict.Dict, n_skip_frames: int = 0):
         super().__init__(cfg)
         self.video_path = video_path
         self.base_path = os.path.split(video_path)[0]
-        self.cap = cv2.VideoCapture(video_path)
-        self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        self.len = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap = cv2.VideoCapture(video_path)
+        self.width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.len = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.n_skip_frames = n_skip_frames
-    
+        del cap
+        self.cap = None
+
     def __len__(self):
         return int(np.ceil(self.len / max(self.n_skip_frames, 1)))
-    
-    def __getitem__(self, index: int):
-        # Get data
+
+    def __getitem__(self, index: int) -> Dict:
         # If tries to get not the next frame, set cap pos to right position
-        # index_ = index
         index = index * max(1, self.n_skip_frames)
-        # print(f'Loading frame {index_} -> {index}')
+        if self.cap is None:
+            self.cap = cv2.VideoCapture(self.video_path)
         cap_pos = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
         if cap_pos != index:
-            # print(f'Changing pos from {cap_pos} to {index}!')
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, index)
-            # print(f'Changed pos from {cap_pos} to {index}!')
         img = self.cap.read()[1]
         # Add img_path for consistency
         img_path = os.path.join(self.base_path, f'{index+1:0>5}.jpg')
@@ -152,34 +149,6 @@ class VideoDataset(BaseDataset):
             "image": img, "height": height, "width": width, 'image_path': img_path
         }
 
-
-class MyDataloader:
-    """Barebone dataloader"""
-
-    def __init__(self, dataset, batch_size):
-        self.dataset = dataset
-        self.batch_size = batch_size
-        self.pos = 0
-    
-    def __len__(self):
-        return int(np.ceil(len(self.dataset) / self.batch_size))
-    
-    def __iter__(self):
-        assert self.pos == 0, "Can start only once!"
-        return self
-    
-    def __next__(self):
-        batch = []
-        for _ in range(self.batch_size):
-            if self.pos >= len(self.dataset):
-                if batch:
-                    return self.dataset.collate_fn(batch)
-                else:
-                    raise StopIteration
-            data = self.dataset[self.pos]
-            batch.append(data)
-            self.pos += 1
-        return self.dataset.collate_fn(batch)
 
 class Predictor(ABC):
     """Abstract class for prediction model."""
@@ -192,17 +161,19 @@ class Predictor(ABC):
         self.model(batch)
         pass
 
+
 class ONNXPredictor(Predictor):
     """Class for ONNX based predictor."""
 
     def __init__(self, cfg):
         super().__init__(cfg)
         # Set graph optimization level
-        sess_options = ort.SessionOptions()
-        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_EXTENDED
+        so = ort.SessionOptions()
+        # so.execution_mode = ort.ExecutionMode.ORT_PARALLEL#ORT_SEQUENTIAL
+        so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         # Load model
         self.ort_session = ort.InferenceSession(
-            cfg.weights_path, providers=cfg.providers,
+            cfg.weights_path, sess_options=so, providers=cfg.providers,
         )
         ort_inputs = self.ort_session.get_inputs()
         assert len(ort_inputs) == 1, "Support only models with one input"

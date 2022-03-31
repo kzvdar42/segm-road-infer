@@ -9,8 +9,8 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from utils import get_subfolders_with_files, is_image, load_model_config, colorize_pred, apply_mask, create_folder_for_file, get_classes
-from infer_utils import Predictor, ONNXPredictor, DetectronPredictor, ImageDataset, VideoDataset, MyDataloader
+from utils import get_subfolders_with_files, is_image, load_model_config, colorize_pred, apply_mask, create_folder_for_file, get_classes, get_out_path
+from infer_utils import Predictor, ONNXPredictor, DetectronPredictor, ImageDataset, VideoDataset
 
 
 def load_predictor(model_cfg: dict) -> Predictor:
@@ -25,12 +25,12 @@ def load_predictor(model_cfg: dict) -> Predictor:
 
 
 def show_preds(predictions: List[np.ndarray], metadata: dict, show: bool = True,
-               save_to: str = None, window_size: Tuple[int, int] = None, grayscale: bool = False) -> bool:
+               save_to: str = None, window_size: Tuple[int, int] = None) -> bool:
     window_size = window_size or (1280, 720)
     for pred, meta in zip(predictions, metadata):
         img_name = os.path.split(meta['image_path'])[1]
         img_orig = cv2.imread(meta['image_path'])
-        res_img = colorize_pred(pred, grayscale)
+        res_img = colorize_pred(pred)
         res_img = apply_mask(img_orig, res_img, alpha=0.5)
         if save_to is not None:
             out_path = os.path.join(save_to, img_name)
@@ -44,16 +44,11 @@ def show_preds(predictions: List[np.ndarray], metadata: dict, show: bool = True,
         return False
 
 
-def save_preds(predictions: List[np.ndarray], metadata: dict, in_base_path: str, out_path: str, 
-    grayscale: bool = False, colorize: bool = False) -> None:
+def save_preds(predictions: List[np.ndarray], metadata: dict, in_base_path: str, out_path: str) -> None:
     for pred, meta in zip(predictions, metadata):
-        rel_img_path = os.path.relpath(meta['image_path'], in_base_path)
-        # Save masks as png
-        rel_img_path = os.path.splitext(rel_img_path)[0] + '.png'
-        pred_out_path = os.path.join(out_path, rel_img_path)
+        pred_out_path = get_out_path(meta['image_path'], out_path, in_base_path)
         create_folder_for_file(pred_out_path)
-        res_img = colorize_pred(pred, grayscale) if colorize else pred
-        if not cv2.imwrite(pred_out_path, res_img):
+        if not cv2.imwrite(pred_out_path, pred):
             print(f'Didn\'t save!', pred_out_path, type(pred), pred.shape)
 
 
@@ -76,15 +71,15 @@ def index_images(input_folder: str, n_skip_frames: int = None) -> List[str]:
 def get_args():
     parser = argparse.ArgumentParser('python infer.py')
     parser.add_argument('model_config', help='path to the model yaml config')
-    parser.add_argument('in_path', help='path to input folder with images/input videofile. Will either read all images under this path, or load provided videofile')
+    parser.add_argument('in_path', help='path to input. It can be either folder/txt file with image paths/videofile.')
     parser.add_argument('out_path', help='path to save the resulting masks')
     parser.add_argument('--show', action='store_true', help='set to visualize predictions')
     parser.add_argument('--apply_ego_mask_from', help='path to ego masks, will load them and apply to predictions')
     parser.add_argument('--n_skip_frames', type=int, default=0, help='how many frames to skip during inference [default: 0]')
     parser.add_argument('--only_ego_vehicle', action='store_true', help='store only ego vehicle class')
+    parser.add_argument('--skip_processed', action='store_true', help='skip already processed frames')
     parser.add_argument('--save_vis_to', default=None, help='path to save the visualized predictions. [default: None]')
     parser.add_argument('--window_size', type=int, nargs='+', default=(1280, 720), help='window size for visualization')
-    parser.add_argument('--grayscale', action='store_true', default=True, help='Make output video grayscale (default true)')
 
     args = parser.parse_args()
     args = addict.Dict(vars(args))
@@ -114,26 +109,46 @@ if __name__ == '__main__':
             # Load first mask
             if ego_mask is None:
                 ego_mask = cv2.imread(ego_mask_path, -1)
-        print(f'Indexed ego mask, found {len(img_name_to_ego_mask_paths)}')
+        print(f'Indexed ego masks, found {len(img_name_to_ego_mask_paths)}')
 
-    # Create dataloader (if folder or image -> image dataset, otherwise video)
-    if os.path.isdir(args.in_path) or is_image(args.in_path):
-        args.base_path = os.path.abspath(args.in_path)
-        image_paths = index_images(args.in_path, args.n_skip_frames)
+    # Create dataloader (if folder/image/txt_file -> image dataset, otherwise video)
+    if os.path.isdir(args.in_path) or is_image(args.in_path) or args.in_path.endswith('.txt'):
+        if args.in_path.endswith('.txt'):
+            # First line is the base_path for input images!
+            with open(args.in_path) as in_stream:
+                args.base_path = in_stream.readline().strip()
+                image_paths = [l.strip() for l in in_stream.readlines()]
+            print(f'Got {len(image_paths)} from input file.')
+        else:
+            args.base_path = os.path.abspath(args.in_path)
+            image_paths = index_images(args.in_path, args.n_skip_frames)
+        if args.skip_processed:
+            pbar = tqdm(image_paths, desc='Check if processed', leave=False)
+            image_paths = []
+            for img_path in pbar:
+                if os.path.isfile(get_out_path(img_path, args.out_path, args.base_path)):
+                    image_paths.append(img_path)
+            print(f'Skipped already processed files, {len(image_paths)} left')
         dataset = ImageDataset(image_paths, model_cfg)
-        dataloader = DataLoader(
-            dataset, batch_size=model_cfg.batch_size, pin_memory=model_cfg.model_type == 'torch',
-            num_workers=model_cfg.num_workers, collate_fn=dataset.collate_fn,
-            shuffle=False, prefetch_factor=1,
-        )
     else:
         args.base_path = os.path.abspath(os.path.split(args.in_path)[0])
         print('[WARNING] You\'re inferensing on videofile, which is not efficient. It\'s faster to run on images.')
+        if args.skip_processed:
+            print('[WARNING] skip_processed flag is not yet supported for video inputs!')
         dataset = VideoDataset(args.in_path, model_cfg, args.n_skip_frames)
         print(f'Loaded video, total frames {dataset.len}')
         if args.n_skip_frames:
             print(f'Skipping {args.n_skip_frames} frames each time, {len(dataset)} left')
-        dataloader = MyDataloader(dataset, 1) # Batch size has no effect
+
+    dataloader = DataLoader(
+        dataset, batch_size=model_cfg.batch_size, pin_memory=model_cfg.model_type == 'torch',
+        num_workers=model_cfg.num_workers, collate_fn=dataset.collate_fn,
+        shuffle=False,
+    )
+
+    # Set first ego mask
+    if ego_mask is not None:
+        dataset.ego_mask = ego_mask
 
     # Load model
     model = load_predictor(model_cfg)
@@ -161,9 +176,9 @@ if __name__ == '__main__':
                     pred[ego_mask == 255] = len(classes)
 
         if args.show or args.save_vis_to:
-            if show_preds(processed, metadata, args.show, args.save_vis_to, args.window_size, args.grayscale):
+            if show_preds(processed, metadata, args.show, args.save_vis_to, args.window_size):
                 cv2.destroyAllWindows()
                 break  
 
         if args.out_path:
-            save_preds(processed, metadata, args.base_path, args.out_path, args.grayscale, colorize=not args.only_ego_vehicle)
+            save_preds(processed, metadata, args.base_path, args.out_path)

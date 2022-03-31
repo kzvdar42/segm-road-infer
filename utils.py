@@ -3,6 +3,7 @@ import yaml
 from typing import Callable, Generator
 
 import addict
+from tqdm.auto import tqdm
 import numpy as np
 
 mask2former_home_path = os.environ.get('MASK2FORMER_HOME')
@@ -30,7 +31,9 @@ def is_image(path: str) -> bool:
 
 
 def get_subfolders_with_files(path: str, is_file_func: Callable, yield_by_one: bool = False) -> Generator:
-    for dp, _, fn in os.walk(path):
+    pbar = tqdm(os.walk(path), leave=False, desc='Indexing...')
+    found_files = 0
+    for dp, _, fn in pbar:
         file_paths = [os.path.join(dp, f) for f in fn if is_file_func(f)]
         if file_paths:
             if yield_by_one:
@@ -38,6 +41,17 @@ def get_subfolders_with_files(path: str, is_file_func: Callable, yield_by_one: b
                     yield file_path
             else:
                 yield file_paths
+        found_files += len(file_paths)
+        pbar.set_postfix(dict(found_files=found_files))
+    pbar.close()
+
+
+def get_out_path(in_path: str, out_path: str, in_base_path: str) -> str:
+    rel_img_path = os.path.relpath(in_path, in_base_path)
+    # Save masks as png
+    rel_img_path = os.path.splitext(rel_img_path)[0] + '.png'
+    pred_out_path = os.path.join(out_path, rel_img_path)
+    return pred_out_path
 
 
 def get_classes(dataset_type: str):
@@ -58,12 +72,7 @@ def get_classes(dataset_type: str):
     return classes, cls_name_to_id, cls_id_to_name
 
 
-def cityscapes_palette(grayscale: bool = False):
-    if grayscale:
-        return [[0,  0, 0], [1,  1, 1], [2,  2,  2], [3, 3, 3], [4, 4, 4], 
-                [5, 5, 5], [6, 6, 6], [7, 7, 7], [8, 8, 8], [9, 9, 9], [10, 10, 10],
-                [11, 11, 11], [12, 12, 12], [13, 13, 13], [14, 14, 14], 
-                [15, 15, 15], [16, 16, 16], [17, 17, 17], [18, 18, 18], [19, 19, 19]]
+def cityscapes_palette():
     return [[128, 64, 128], [244, 35, 232], [70, 70, 70], [102, 102, 156],
             [190, 153, 153], [153, 153, 153], [250, 170, 30], [220, 220, 0],
             [107, 142, 35], [152, 251, 152], [70, 130, 180], [220, 20, 60],
@@ -71,9 +80,7 @@ def cityscapes_palette(grayscale: bool = False):
             [0, 0, 230], [119, 11, 32], [255, 255, 255]]
 
 
-def ade_palette(grayscale: bool = False):
-    if grayscale:
-        raise Exception('Grayscale ade palette not inplemented, please add.')
+def ade_palette():
     """ADE20K palette for external use."""
     return [[120, 120, 120], [180, 120, 120], [6, 230, 230], [80, 50, 50],
             [4, 200, 3], [120, 120, 80], [140, 140, 140], [204, 5, 255],
@@ -115,8 +122,8 @@ def ade_palette(grayscale: bool = False):
             [102, 255, 0], [92, 0, 255]]
 
 
-def colorize_pred(result: np.ndarray, grayscale: bool) -> np.ndarray:
-    palette = ade_palette(grayscale) if np.max(result) > 20 else cityscapes_palette(grayscale)
+def colorize_pred(result: np.ndarray) -> np.ndarray:
+    palette = ade_palette() if np.max(result) > 20 else cityscapes_palette()
     res_img = np.zeros((*result.shape, 3), dtype=np.uint8)
     for cls_idx in np.unique(result):
         res_img[result == cls_idx] = palette[cls_idx]
