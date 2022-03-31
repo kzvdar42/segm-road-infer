@@ -1,3 +1,5 @@
+# set -e for immediate exit if one of the commands exits with non-zero code
+set -e
 # Define enviroment variables
 if [ -z "$MASK2FORMER_HOME" ]; then
   echo "Warning: MASK2FORMER_HOME env var is not set and will be set to a default value"
