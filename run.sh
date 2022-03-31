@@ -1,5 +1,8 @@
 # Define enviroment variables
-export MASK2FORMER_HOME=/mnt/c/Users/Vlad/Desktop/ny-guiderails/Mask2Former
+if [ -z "$MASK2FORMER_HOME" ]; then
+  echo "Warning: MASK2FORMER_HOME env var is not set and will be set to a default value"
+  export MASK2FORMER_HOME=/mnt/c/Users/Vlad/Desktop/ny-guiderails/Mask2Former
+fi
 export PYTHONWARNINGS="ignore"
 EGO_MASK_PATH="ego-vehicle-mask/"
 # Ensure that script hast two inputs: in_path, out_path. Otherwise exit

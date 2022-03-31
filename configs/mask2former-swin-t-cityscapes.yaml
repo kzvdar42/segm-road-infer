@@ -3,7 +3,7 @@ model_type: torch
 image_format: rgb
 use_fp16: True
 classes: cityscapes
-config_file: /mnt/c/Users/Vlad/Desktop/ny-guiderails/Mask2Former/configs/cityscapes/semantic-segmentation/swin/maskformer2_swin_tiny_bs16_90k.yaml
+config_file: configs/cityscapes/semantic-segmentation/swin/maskformer2_swin_tiny_bs16_90k.yaml
 opts: []
 weights_path: weights/sem-swin-t-cityscapes.pkl
 input_shape: [2048, 1024] # width, height

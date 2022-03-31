@@ -25,12 +25,12 @@ def load_predictor(model_cfg: dict) -> Predictor:
 
 
 def show_preds(predictions: List[np.ndarray], metadata: dict, show: bool = True,
-               save_to: str = None, window_size: Tuple[int, int] = None) -> bool:
+               save_to: str = None, window_size: Tuple[int, int] = None, grayscale: bool = False) -> bool:
     window_size = window_size or (1280, 720)
     for pred, meta in zip(predictions, metadata):
         img_name = os.path.split(meta['image_path'])[1]
         img_orig = cv2.imread(meta['image_path'])
-        res_img = colorize_pred(pred)
+        res_img = colorize_pred(pred, grayscale)
         res_img = apply_mask(img_orig, res_img, alpha=0.5)
         if save_to is not None:
             out_path = os.path.join(save_to, img_name)
@@ -44,14 +44,16 @@ def show_preds(predictions: List[np.ndarray], metadata: dict, show: bool = True,
         return False
 
 
-def save_preds(predictions: List[np.ndarray], metadata: dict, in_base_path: str, out_path: str) -> None:
+def save_preds(predictions: List[np.ndarray], metadata: dict, in_base_path: str, out_path: str, 
+    grayscale: bool = False, colorize: bool = False) -> None:
     for pred, meta in zip(predictions, metadata):
         rel_img_path = os.path.relpath(meta['image_path'], in_base_path)
         # Save masks as png
         rel_img_path = os.path.splitext(rel_img_path)[0] + '.png'
         pred_out_path = os.path.join(out_path, rel_img_path)
         create_folder_for_file(pred_out_path)
-        if not cv2.imwrite(pred_out_path, pred):
+        res_img = colorize_pred(pred, grayscale) if colorize else pred
+        if not cv2.imwrite(pred_out_path, res_img):
             print(f'Didn\'t save!', pred_out_path, type(pred), pred.shape)
 
 
@@ -82,6 +84,7 @@ def get_args():
     parser.add_argument('--only_ego_vehicle', action='store_true', help='store only ego vehicle class')
     parser.add_argument('--save_vis_to', default=None, help='path to save the visualized predictions. [default: None]')
     parser.add_argument('--window_size', type=int, nargs='+', default=(1280, 720), help='window size for visualization')
+    parser.add_argument('--grayscale', action='store_true', default=True, help='Make output video grayscale (default true)')
 
     args = parser.parse_args()
     args = addict.Dict(vars(args))
@@ -158,9 +161,9 @@ if __name__ == '__main__':
                     pred[ego_mask == 255] = len(classes)
 
         if args.show or args.save_vis_to:
-            if show_preds(processed, metadata, args.show, args.save_vis_to, args.window_size):
+            if show_preds(processed, metadata, args.show, args.save_vis_to, args.window_size, args.grayscale):
                 cv2.destroyAllWindows()
                 break  
 
         if args.out_path:
-            save_preds(processed, metadata, args.base_path, args.out_path)
+            save_preds(processed, metadata, args.base_path, args.out_path, args.grayscale, colorize=not args.only_ego_vehicle)
