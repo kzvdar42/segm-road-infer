@@ -124,6 +124,7 @@ class VideoDataset(BaseDataset):
         self.width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.len = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.fps = int(cap.get(cv2.CAP_PROP_FPS))
         self.n_skip_frames = n_skip_frames
         del cap
         self.cap = None

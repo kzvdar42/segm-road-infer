@@ -46,10 +46,10 @@ def get_subfolders_with_files(path: str, is_file_func: Callable, yield_by_one: b
     pbar.close()
 
 
-def get_out_path(in_path: str, out_path: str, in_base_path: str) -> str:
+def get_out_path(in_path: str, out_path: str, in_base_path: str, ext: str) -> str:
     rel_img_path = os.path.relpath(in_path, in_base_path)
     # Save masks as png
-    rel_img_path = os.path.splitext(rel_img_path)[0] + '.png'
+    rel_img_path = os.path.splitext(rel_img_path)[0] + f'.{ext}'
     pred_out_path = os.path.join(out_path, rel_img_path)
     return pred_out_path
 

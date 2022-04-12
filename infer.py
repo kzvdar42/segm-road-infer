@@ -44,12 +44,17 @@ def show_preds(predictions: List[np.ndarray], metadata: dict, show: bool = True,
         return False
 
 
-def save_preds(predictions: List[np.ndarray], metadata: dict, in_base_path: str, out_path: str) -> None:
+def save_preds_as_masks(predictions: List[np.ndarray], metadata: dict, in_base_path: str, out_path: str) -> None:
     for pred, meta in zip(predictions, metadata):
         pred_out_path = get_out_path(meta['image_path'], out_path, in_base_path)
         create_folder_for_file(pred_out_path)
         if not cv2.imwrite(pred_out_path, pred):
             print(f'Didn\'t save!', pred_out_path, type(pred), pred.shape)
+
+
+def save_preds_as_video(predictions: List[np.ndarray], metadata: dict, video_writer: cv2.VideoWriter) -> None:
+    for pred, meta in zip(predictions, metadata):
+        video_writer.write(pred)
 
 
 def index_images(input_folder: str, n_skip_frames: int = None) -> List[str]:
@@ -73,6 +78,7 @@ def get_args():
     parser.add_argument('model_config', help='path to the model yaml config')
     parser.add_argument('in_path', help='path to input. It can be either folder/txt file with image paths/videofile.')
     parser.add_argument('out_path', help='path to save the resulting masks')
+    parser.add_argument('--out_format', default='mp4', choices=['mp4', 'jpg', 'png'], help='format for saving the result')
     parser.add_argument('--show', action='store_true', help='set to visualize predictions')
     parser.add_argument('--apply_ego_mask_from', help='path to ego masks, will load them and apply to predictions')
     parser.add_argument('--n_skip_frames', type=int, default=0, help='how many frames to skip during inference [default: 0]')
@@ -82,6 +88,12 @@ def get_args():
     parser.add_argument('--window_size', type=int, nargs='+', default=(1280, 720), help='window size for visualization')
 
     args = parser.parse_args()
+
+    if args.out_path.endswith('.mp4'):
+        args.out_format = 'mp4'
+    elif os.path.isdir(args.out_path) and args.out_format == 'mp4':
+        raise argparse.ArgumentError('Either provide out_path with video name or choose another out_format!')
+
     args = addict.Dict(vars(args))
     return args
 
@@ -150,6 +162,14 @@ if __name__ == '__main__':
     if ego_mask is not None:
         dataset.ego_mask = ego_mask
 
+    # Create videowriter if saving as a video
+    if args.out_path and args.out_format == 'mp4':
+        fourcc = cv2.VideoWriter_fourcc(*'png ')
+        fps = dataset.fps if isinstance(dataset, VideoDataset) else 30
+        frame_size = (dataset.width, dataset.height) if isinstance(dataset, VideoDataset) else (1920, 1080)
+        video_writer = cv2.VideoWriter(args.out_path, fourcc, fps, frame_size, 0)
+        print(f'Saving results to videofile with {fps} fps and {frame_size} frame size.')
+
     # Load model
     model = load_predictor(model_cfg)
 
@@ -181,4 +201,12 @@ if __name__ == '__main__':
                 break  
 
         if args.out_path:
-            save_preds(processed, metadata, args.base_path, args.out_path)
+            if args.out_format in ['png', 'jpg']:
+                save_preds_as_masks(processed, metadata, args.base_path, args.out_path)
+            elif args.out_format == 'mp4':
+                save_preds_as_video(processed, metadata, video_writer)
+            else:
+                raise ValueError(f'Unknown out format! ({args.out_format})')
+    
+    if args.out_format == 'mp4':
+        video_writer.release()
