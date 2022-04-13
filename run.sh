@@ -17,7 +17,7 @@ echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 echo "~~~~~~~~~~~~~ Calculating ego vehicle masks ~~~~~~~~~~~~~"
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 rm -rf ego-vehicle-mask
-python infer.py configs/mask2former-swin-l-mapillary.yaml $1 $EGO_MASK_PATH --only_ego_vehicle --n_skip_frames 100
+python infer.py configs/mask2former-swin-l-mapillary.yaml $1 $EGO_MASK_PATH --only_ego_vehicle --n_skip_frames 100 --out_format png
 # Calculate segmentation masks
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 echo "~~~~~~~~~~~~~ Calculating segmentation masks ~~~~~~~~~~~~~"

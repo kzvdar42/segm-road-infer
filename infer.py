@@ -44,9 +44,9 @@ def show_preds(predictions: List[np.ndarray], metadata: dict, show: bool = True,
         return False
 
 
-def save_preds_as_masks(predictions: List[np.ndarray], metadata: dict, in_base_path: str, out_path: str) -> None:
+def save_preds_as_masks(predictions: List[np.ndarray], metadata: dict, in_base_path: str, out_path: str, ext: str) -> None:
     for pred, meta in zip(predictions, metadata):
-        pred_out_path = get_out_path(meta['image_path'], out_path, in_base_path)
+        pred_out_path = get_out_path(meta['image_path'], out_path, in_base_path, ext)
         create_folder_for_file(pred_out_path)
         if not cv2.imwrite(pred_out_path, pred):
             print(f'Didn\'t save!', pred_out_path, type(pred), pred.shape)
@@ -164,7 +164,7 @@ if __name__ == '__main__':
 
     # Create videowriter if saving as a video
     if args.out_path and args.out_format == 'mp4':
-        fourcc = cv2.VideoWriter_fourcc(*'png ')
+        fourcc = cv2.VideoWriter_fourcc(*'ffv1')
         fps = dataset.fps if isinstance(dataset, VideoDataset) else 30
         frame_size = (dataset.width, dataset.height) if isinstance(dataset, VideoDataset) else (1920, 1080)
         video_writer = cv2.VideoWriter(args.out_path, fourcc, fps, frame_size, 0)
@@ -202,7 +202,7 @@ if __name__ == '__main__':
 
         if args.out_path:
             if args.out_format in ['png', 'jpg']:
-                save_preds_as_masks(processed, metadata, args.base_path, args.out_path)
+                save_preds_as_masks(processed, metadata, args.base_path, args.out_path, args.out_format)
             elif args.out_format == 'mp4':
                 save_preds_as_video(processed, metadata, video_writer)
             else:
