@@ -231,4 +231,4 @@ if __name__ == '__main__':
     
     if args.out_format == 'mp4':
         video_writer.stdin.close()
-        video_writer.wait()
+        # video_writer.wait()
