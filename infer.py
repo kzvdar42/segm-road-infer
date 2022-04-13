@@ -1,6 +1,7 @@
 import argparse
 import os
 from typing import List, Tuple
+import yaml
 
 import addict
 import cv2
@@ -9,8 +10,15 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from utils import get_subfolders_with_files, is_image, load_model_config, colorize_pred, apply_mask, create_folder_for_file, get_classes, get_out_path
-from infer_utils import Predictor, ONNXPredictor, DetectronPredictor, ImageDataset, VideoDataset
+from utils import (
+    get_subfolders_with_files, is_image, load_model_config,
+    colorize_pred, apply_mask, create_folder_for_file, get_classes,
+    get_out_path
+)
+from infer_utils import (
+    Predictor, ONNXPredictor, DetectronPredictor, ImageDataset, VideoDataset,
+    ffmpeg_start_out_process
+)
 
 
 def load_predictor(model_cfg: dict) -> Predictor:
@@ -54,7 +62,7 @@ def save_preds_as_masks(predictions: List[np.ndarray], metadata: dict, in_base_p
 
 def save_preds_as_video(predictions: List[np.ndarray], metadata: dict, video_writer: cv2.VideoWriter) -> None:
     for pred, meta in zip(predictions, metadata):
-        video_writer.write(pred)
+        video_writer.stdin.write(pred.tobytes())
 
 
 def index_images(input_folder: str, n_skip_frames: int = None) -> List[str]:
@@ -72,6 +80,13 @@ def index_images(input_folder: str, n_skip_frames: int = None) -> List[str]:
         print(f'Skipping {n_skip_frames} images each time, {len(image_paths)} left')
     return image_paths
 
+def default_ffmpeg_args():
+    return dict(
+        vcodec = "libx264",
+        pix_fmt = "yuv420p",
+        output_args = dict(crf=0),
+        global_args = "-hide_banner -loglevel error",
+    )
 
 def get_args():
     parser = argparse.ArgumentParser('python infer.py')
@@ -85,7 +100,8 @@ def get_args():
     parser.add_argument('--only_ego_vehicle', action='store_true', help='store only ego vehicle class')
     parser.add_argument('--skip_processed', action='store_true', help='skip already processed frames')
     parser.add_argument('--save_vis_to', default=None, help='path to save the visualized predictions. [default: None]')
-    parser.add_argument('--window_size', type=int, nargs='+', default=(1280, 720), help='window size for visualization')
+    parser.add_argument('--window_size', type=int, nargs='+', default=(1280, 720), help='window size for visualization [default: (1280, 720)]')
+    parser.add_argument('--ffmpeg_setting_file', default='.ffmpeg_settings.yaml', help='path to ffmpeg settings. [default: `.ffmpeg_settings.yaml`]')
 
     args = parser.parse_args()
 
@@ -93,6 +109,11 @@ def get_args():
         args.out_format = 'mp4'
     elif os.path.isdir(args.out_path) and args.out_format == 'mp4':
         raise argparse.ArgumentError('Either provide out_path with video name or choose another out_format!')
+
+    args.ffmpeg = default_ffmpeg_args()
+    if os.path.isfile(args.ffmpeg_setting_file):
+        with open(args.ffmpeg_setting_file) as in_stream:
+            args.ffmpeg = yaml.safe_load(in_stream)
 
     args = addict.Dict(vars(args))
     return args
@@ -166,9 +187,9 @@ if __name__ == '__main__':
     if args.out_path and args.out_format == 'mp4':
         fourcc = cv2.VideoWriter_fourcc(*'ffv1')
         fps = dataset.fps if isinstance(dataset, VideoDataset) else 30
-        frame_size = (dataset.width, dataset.height) if isinstance(dataset, VideoDataset) else (1920, 1080)
-        video_writer = cv2.VideoWriter(args.out_path, fourcc, fps, frame_size, 0)
-        print(f'Saving results to videofile with {fps} fps and {frame_size} frame size.')
+        width, height = (dataset.width, dataset.height) if isinstance(dataset, VideoDataset) else (1920, 1080)
+        video_writer = ffmpeg_start_out_process(args.ffmpeg, args.out_path, width, height, fps)
+        print(f'Saving results to videofile with {fps} fps and {(width, height)} frame size.')
 
     # Load model
     model = load_predictor(model_cfg)
@@ -209,4 +230,5 @@ if __name__ == '__main__':
                 raise ValueError(f'Unknown out format! ({args.out_format})')
     
     if args.out_format == 'mp4':
-        video_writer.release()
+        video_writer.stdin.close()
+        video_writer.wait()

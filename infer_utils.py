@@ -7,6 +7,7 @@ import addict
 import cv2
 import numpy as np
 import torch
+import ffmpeg
 import onnxruntime as ort
 from torch.utils.data import Dataset
 try:
@@ -150,6 +151,64 @@ class VideoDataset(BaseDataset):
             "image": img, "height": height, "width": width, 'image_path': img_path
         }
 
+import subprocess
+def ffmpeg_start_in_process(in_filename):
+    popen_args = (
+        ffmpeg
+        .input(in_filename)
+        .output('pipe:', format='rawvideo', pix_fmt='rgb24')
+        .compile()
+    )
+    return subprocess.Popen(popen_args, stdout=subprocess.PIPE)
+
+
+def ffmpeg_start_out_process(ffmpeg_args, out_filename, width, height, fps=30):
+    popen_args = (
+        ffmpeg
+        .input('pipe:', format='rawvideo', pix_fmt='gray', s='{}x{}'.format(width, height))
+        .filter('fps', fps=fps, round='up')
+        .output(
+            out_filename,
+            vcodec=ffmpeg_args.out_vcodec, #hevc_nvenc
+            pix_fmt=ffmpeg_args.out_pix_fmt,
+            **ffmpeg_args.output_args,
+        )
+        .global_args(*ffmpeg_args.global_args.split(' '))
+        .overwrite_output()
+        .compile()
+    )
+    return subprocess.Popen(popen_args, stdin=subprocess.PIPE)
+
+class FfmpegVideoDataset(torch.utils.data.IterableDataset):
+
+    @classmethod
+    def get_video_metadata(cls, video_path):
+        probe = ffmpeg.probe(video_path)
+        video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
+        width = int(video_stream['width'])
+        height = int(video_stream['height'])
+        num_frames = int(video_stream['nb_frames'])
+        fps = int(eval(video_stream['r_frame_rate']))
+        return width, height, num_frames, fps
+
+    def __init__(self, video_path: str, cfg: addict.Dict, n_skip_frames: int = 0):
+        super().__init__(cfg)
+        self.video_path = video_path
+        self.base_path = os.path.split(video_path)[0]
+        self.width, self.height, self.len, self.fps = self.get_video_metadata(video_path)
+        self.n_skip_frames = n_skip_frames
+        self.in_pipe = ffmpeg_start_in_process(video_path)
+
+
+    def __iter__(self):
+        in_bytes = self.in_pipe.stdout.read(self.width * self.height * 3)
+        if not in_bytes:
+            raise StopIteration
+        in_frame = (
+            np
+            .frombuffer(in_bytes, np.uint8)
+            .reshape([self.height, self.width, 3])
+        )
 
 class Predictor(ABC):
     """Abstract class for prediction model."""

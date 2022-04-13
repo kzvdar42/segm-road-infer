@@ -1,0 +1,6 @@
+out_vcodec: libx264 # hevc_nvenc
+out_pix_fmt: yuv420p
+output_args:
+    crf: 0
+    # preset: ultrafast
+global_args: '-hide_banner -loglevel error'
