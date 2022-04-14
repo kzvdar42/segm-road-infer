@@ -174,7 +174,6 @@ if __name__ == '__main__':
         if args.skip_processed:
             print('[WARNING] skip_processed flag is not yet supported for video inputs!')
         dataset = VideoDataset(args.in_path, model_cfg, args.n_skip_frames)
-        dataset.len = 30
         print(f'Loaded video, total frames {dataset.len}')
         if args.n_skip_frames:
             print(f'Skipping {args.n_skip_frames} frames each time, {len(dataset)} left')
