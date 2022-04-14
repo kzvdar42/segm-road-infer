@@ -1,5 +1,7 @@
 import argparse
 import os
+from socket import timeout
+import subprocess
 from typing import List, Tuple
 import yaml
 
@@ -88,6 +90,7 @@ def default_ffmpeg_args():
         global_args = "-hide_banner -loglevel error",
     )
 
+
 def get_args():
     parser = argparse.ArgumentParser('python infer.py')
     parser.add_argument('model_config', help='path to the model yaml config')
@@ -102,8 +105,10 @@ def get_args():
     parser.add_argument('--save_vis_to', default=None, help='path to save the visualized predictions. [default: None]')
     parser.add_argument('--window_size', type=int, nargs='+', default=(1280, 720), help='window size for visualization [default: (1280, 720)]')
     parser.add_argument('--ffmpeg_setting_file', default='.ffmpeg_settings.yaml', help='path to ffmpeg settings. [default: `.ffmpeg_settings.yaml`]')
+    parser.add_argument('--no_tqdm', action='store_true', help='flag to not use tqdm progress bar')
 
     args = parser.parse_args()
+    args.print_every_n = 5
 
     if args.out_path.endswith('.mp4'):
         args.out_format = 'mp4'
@@ -169,6 +174,7 @@ if __name__ == '__main__':
         if args.skip_processed:
             print('[WARNING] skip_processed flag is not yet supported for video inputs!')
         dataset = VideoDataset(args.in_path, model_cfg, args.n_skip_frames)
+        dataset.len = 30
         print(f'Loaded video, total frames {dataset.len}')
         if args.n_skip_frames:
             print(f'Skipping {args.n_skip_frames} frames each time, {len(dataset)} left')
@@ -195,8 +201,10 @@ if __name__ == '__main__':
     model = load_predictor(model_cfg)
 
     # infer model
-    pbar = tqdm(dataloader)
-    for images, metadata in pbar:
+    # XXX: Using pbar like this, because otherwise ffmpeg subprocess wouldn't finish
+    if not args.no_tqdm:
+        pbar = tqdm(total=len(dataloader))
+    for n_batch, (images, metadata) in enumerate(dataloader, 1):
         predictions = model(images)
         processed = dataset.postprocess(predictions, metadata)
         del predictions
@@ -217,6 +225,7 @@ if __name__ == '__main__':
                     pred[ego_mask == 255] = len(classes)
 
         if args.show or args.save_vis_to:
+            # If user exits, destroy all windows and break
             if show_preds(processed, metadata, args.show, args.save_vis_to, args.window_size):
                 cv2.destroyAllWindows()
                 break  
@@ -228,7 +237,24 @@ if __name__ == '__main__':
                 save_preds_as_video(processed, metadata, video_writer)
             else:
                 raise ValueError(f'Unknown out format! ({args.out_format})')
-    
+        if args.no_tqdm:
+            if n_batch % args.print_every_n == 0:
+                print(f'Processed {n_batch} batches')
+        else:
+            pbar.update(1)
+
+    if not args.no_tqdm:
+        pbar.close()
+
     if args.out_format == 'mp4':
-        video_writer.stdin.close()
-        # video_writer.wait()
+        print('Waiting for ffmpeg to exit...')
+        try:
+            video_writer.communicate(timeout=args.ffmpeg.max_timeout)
+        except subprocess.TimeoutExpired:
+            print(f'Waited for {args.ffmpeg.max_timeout} seconds. Killing ffmpeg!')
+            video_writer.kill()
+            video_writer.communicate()
+            print(f'ffmpeg killed with code {video_writer.returncode}')
+        else:
+            video_writer.communicate()
+            print(f'ffmpeg succesfully exited with code {video_writer.returncode}')

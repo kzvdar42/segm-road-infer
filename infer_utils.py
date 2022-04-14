@@ -153,17 +153,17 @@ class VideoDataset(BaseDataset):
 
 
 def ffmpeg_start_in_process(in_filename):
-    subprocess = (
+    subprocess_ = (
         ffmpeg
         .input(in_filename)
         .output('pipe:', format='rawvideo', pix_fmt='rgb24')
         .run_async(pipe_stdout=True)
     )
-    return subprocess
+    return subprocess_
 
 
 def ffmpeg_start_out_process(ffmpeg_args, out_filename, width, height, fps=30):
-    subprocess = (
+    subprocess_ = (
         ffmpeg
         .input('pipe:', format='rawvideo', pix_fmt='gray', s='{}x{}'.format(width, height), framerate=fps)
         .output(
@@ -172,11 +172,11 @@ def ffmpeg_start_out_process(ffmpeg_args, out_filename, width, height, fps=30):
             pix_fmt=ffmpeg_args.out_pix_fmt,
             **ffmpeg_args.output_args,
         )
-        .global_args(*ffmpeg_args.global_args.split(' '))
+        .global_args(*ffmpeg_args.global_args.split(' ') if ffmpeg_args.global_args else [])
         .overwrite_output()
         .run_async(pipe_stdin=True)
     )
-    return subprocess
+    return subprocess_
 
 # class FfmpegVideoDataset(torch.utils.data.IterableDataset, BaseDataset):
 
