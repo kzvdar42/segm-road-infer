@@ -13,6 +13,7 @@ def load_model_config(cfg_path: str) -> addict.Dict:
         cfg = yaml.safe_load(in_stream)
         if 'config_file' in cfg.keys():
             if not cfg['config_file'].startswith('/'):
+                assert mask2former_home_path is not None, 'Need to set `mask2former_home_path` env var!'
                 cfg['config_file'] = os.path.join(mask2former_home_path, cfg['config_file'])
         return addict.Dict(cfg)
 

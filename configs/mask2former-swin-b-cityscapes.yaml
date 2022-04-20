@@ -5,7 +5,8 @@ classes: cityscapes
 config_file: configs/cityscapes/semantic-segmentation/swin/maskformer2_swin_base_IN21k_384_bs16_90k.yaml
 opts: []
 weights_path: weights/sem-swin-m-cityscapes.pkl
-input_shape: [2048, 1024] # width, height
+input_shape: [2048, 1024] # width, height - bs 4
+# input_shape: [1024, 512] # width, height - bs 12
 img_mean: null # Already fused in the model
 img_std: null # Already fused in the model
 batch_size: 4

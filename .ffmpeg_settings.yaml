@@ -3,5 +3,6 @@ out_pix_fmt: yuv420p
 output_args:
     crf: 0
     # preset: ultrafast
-global_args: '-hide_banner -loglevel error'
+in_global_args: '-hide_banner -loglevel error'
+out_global_args: '-hide_banner -loglevel error'
 max_timeout: 15
