@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 from socket import timeout
 import subprocess
 from typing import List, Tuple
@@ -18,7 +19,7 @@ from utils import (
     get_out_path
 )
 from infer_utils import (
-    FfmpegVideoDataset, Predictor, ONNXPredictor, DetectronPredictor, ImageDataset, VideoDataset,
+    FfmpegVideoDataset, Predictor, ONNXPredictor, DetectronPredictor, ImageDataset, VideoDataset, ffmpeg_start_out_imgs_process,
     ffmpeg_start_out_process, index_images
 )
 
@@ -62,17 +63,18 @@ def save_preds_as_masks(predictions: List[np.ndarray], metadata: dict, in_base_p
             print(f'Didn\'t save!', pred_out_path, type(pred), pred.shape)
 
 
-def save_preds_as_video(predictions: List[np.ndarray], video_writer: cv2.VideoWriter) -> None:
-    for pred in predictions:
-        video_writer.stdin.write(pred.tobytes())
+def save_preds_to_ffmpeg(predictions: List[np.ndarray], video_writer: subprocess.Popen) -> None:
+    video_writer.stdin.write(predictions.type(torch.uint8).cpu().numpy().tobytes())
 
 
 def default_ffmpeg_args():
     return dict(
-        vcodec = "libx264",
-        pix_fmt = "yuv420p",
+        out_vcodec = "libx264",
+        out_pix_fmt = "yuv420p",
         output_args = dict(crf=0),
-        global_args = "-hide_banner -loglevel error",
+        in_global_args = "-hide_banner -loglevel error",
+        out_global_args = "-hide_banner -loglevel error",
+        max_timeout = 15,
     )
 
 
@@ -106,12 +108,28 @@ def get_args():
     if args.n_skip_frames < 0:
         if not args.in_path.endswith('.mp4'):
             args.n_skip_frames = 30
-        args.n_skip_frames = FfmpegVideoDataset.get_video_metadata(args.in_path)[-1]
+        args.n_skip_frames = abs(args.n_skip_frames) * FfmpegVideoDataset.get_video_metadata(args.in_path)[-1]
 
     args.ffmpeg = default_ffmpeg_args()
     if os.path.isfile(args.ffmpeg_setting_file):
         with open(args.ffmpeg_setting_file) as in_stream:
             args.ffmpeg = yaml.safe_load(in_stream)
+    
+    # load model config
+    args.model_cfg = load_model_config(args.model_config)
+    if args.input_shape:
+        args.model_cfg.input_shape = args.input_shape
+        if args.batch_size:
+            args.model_cfg.batch_size = args.batch_size
+        else:
+            args.model_cfg.batch_size = args.model_cfg.input_shapes.get(
+                ','.join(map(str,args.input_shape)), args.model_cfg.batch_size
+            )
+    else:
+        # Take first value as default
+        input_shape = next(iter(args.model_cfg.input_shapes.keys()))
+        args.model_cfg.batch_size = args.model_cfg.input_shapes[input_shape]
+        args.model_cfg.input_shape = tuple(int(side) for side in input_shape.split(','))
 
     args = addict.Dict(vars(args))
     return args
@@ -119,12 +137,8 @@ def get_args():
 
 if __name__ == '__main__':
     # Get args & load model config
+    torch.backends.cudnn.benchmark = True
     args = get_args()
-    args.model_cfg = load_model_config(args.model_config)
-    if args.batch_size:
-        args.model_cfg.batch_size = args.batch_size
-    if args.input_shape:
-        args.model_cfg.input_shape = args.input_shape
     print('Args:', args, sep='\n')
 
     # Load classes
@@ -141,6 +155,7 @@ if __name__ == '__main__':
         args.base_path = os.path.abspath(os.path.split(args.in_path)[0])
         if args.skip_processed:
             print('[WARNING] skip_processed flag is not yet supported for video inputs!')
+        # dataset = VideoDataset(args.in_path, args, args.n_skip_frames)
         if args.n_skip_frames:
             dataset = VideoDataset(args.in_path, args, args.n_skip_frames)
         else:
@@ -151,37 +166,46 @@ if __name__ == '__main__':
             print(f'Skipping {args.n_skip_frames} frames each time, {len(dataset)} left')
 
     dataloader = DataLoader(
-        dataset, batch_size=args.model_cfg.batch_size, pin_memory=args.model_cfg.model_type == 'torch',
+        dataset, batch_size=args.model_cfg.batch_size, pin_memory=True,
         num_workers=args.model_cfg.num_workers, collate_fn=dataset.collate_fn,
         shuffle=False, prefetch_factor=8,
     )
 
     # Create videowriter if saving as a video
-    if args.out_path and args.out_format == 'mp4':
+    if args.out_format == 'mp4':
         out_width, out_height, fps = 1920, 1080, 30
         if isinstance(dataset, (FfmpegVideoDataset, VideoDataset)):
             out_width, out_height, fps =  dataset.orig_width, dataset.orig_height, dataset.fps
-        video_writer = ffmpeg_start_out_process(
+        out_writer = ffmpeg_start_out_process(
             args.ffmpeg, args.out_path, *args.model_cfg.input_shape, out_width, out_height, fps
         )
         print(f'Saving results to videofile with {fps} fps and {(out_width, out_height)} frame size.')
+    # else:
+    #     out_writer = ffmpeg_start_out_imgs_process(
+    #         args.ffmpeg, args.out_path, args.out_format, *args.model_cfg.input_shape
+    #     )
 
     # Load model
     model = load_predictor(args.model_cfg)
+    print(f'Infer image size: {args.model_cfg.input_shape}; batch size: {args.model_cfg.batch_size}')
 
     # Infer model
     # XXX: Using pbar like this, because otherwise ffmpeg subprocess wouldn't finish
     if not args.no_tqdm:
         pbar = tqdm(total=len(dataloader))
-    for n_batch, (images, metadata) in enumerate(dataloader, 1):
+    resize_img = args.out_format != 'mp4' and not args.only_ego_vehicle
+    for n_batch, (images, img_masks, metadata) in enumerate(dataloader, 1):
+        images = images.to('cuda', non_blocking=True)
+        if img_masks is not None:
+            img_masks = img_masks.to('cuda', non_blocking=True)
         predictions = model(images)
         predictions = dataset.postprocess(
-            predictions, metadata, ego_mask_cls_id=len(classes), resize_img=args.out_format != 'mp4'
+            predictions, metadata, img_masks=img_masks, ego_mask_cls_id=len(classes), resize_img=resize_img
         )
 
         if args.only_ego_vehicle:
-            for pred_num, pred in enumerate(predictions):
-                predictions[pred_num] = (np.isin(pred, ego_class_ids) * 255).reshape(pred.shape)
+            # predictions = (np.isin(predictions, ego_class_ids) * 255).reshape(predictions.shape)
+            predictions = ((predictions[..., None] == torch.tensor(ego_class_ids).cuda().unsqueeze(0)).any(-1) * 255).cpu().numpy()
 
         if args.show or args.save_vis_to:
             # If user exits, destroy all windows and break
@@ -191,9 +215,10 @@ if __name__ == '__main__':
 
         if args.out_path:
             if args.out_format in ['png', 'jpg']:
+                # save_preds_to_ffmpeg(predictions, out_writer)
                 save_preds_as_masks(predictions, metadata, args.base_path, args.out_path, args.out_format)
             elif args.out_format == 'mp4':
-                save_preds_as_video(predictions, video_writer)
+                save_preds_to_ffmpeg(predictions, out_writer)
             else:
                 raise ValueError(f'Unknown out format! ({args.out_format})')
         if args.no_tqdm:
@@ -209,12 +234,12 @@ if __name__ == '__main__':
     if args.out_format == 'mp4':
         print('Waiting for ffmpeg to exit...')
         try:
-            video_writer.communicate(timeout=args.ffmpeg.max_timeout)
+            out_writer.communicate(timeout=args.ffmpeg.max_timeout)
         except subprocess.TimeoutExpired:
             print(f'Waited for {args.ffmpeg.max_timeout} seconds. Killing ffmpeg!')
-            video_writer.kill()
-            video_writer.communicate()
-            print(f'ffmpeg killed with code {video_writer.returncode}')
+            out_writer.kill()
+            out_writer.communicate()
+            print(f'ffmpeg killed with code {out_writer.returncode}')
         else:
-            video_writer.communicate()
-            print(f'ffmpeg succesfully exited with code {video_writer.returncode}')
+            out_writer.communicate()
+            print(f'ffmpeg succesfully exited with code {out_writer.returncode}')

@@ -16,13 +16,14 @@ fi
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 echo "~~~~~~~~~~~~~ Calculating ego vehicle masks ~~~~~~~~~~~~~"
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-rm -rf ego-vehicle-mask
-python infer.py configs/mask2former-swin-l-mapillary.yaml $1 $EGO_MASK_PATH --only_ego_vehicle --n_skip_frames -1 --out_format png #  --n_skip_frames -1 - skip one frame per second
+rm -rf $EGO_MASK_PATH
+mkdir $EGO_MASK_PATH
+python infer.py configs/mask2former-swin-l-mapillary.yaml $1 $EGO_MASK_PATH --only_ego_vehicle --n_skip_frames -2 --out_format png #  --n_skip_frames -2 - take one frame per 2 seconds
 # Calculate segmentation masks
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 echo "~~~~~~~~~~~~~ Calculating segmentation masks ~~~~~~~~~~~~~"
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-python infer.py configs/onnx-bisectv1-dynamic.yaml $1 $2 --apply_ego_mask_from $EGO_MASK_PATH
+python infer.py configs/onnx-bisectv1-dynamic.yaml $1 $2 --apply_ego_mask_from $EGO_MASK_PATH # --input_shape 1024 512
 
 # Other onnx models
 # python infer.py configs/onnx-deeplabv3plus-r18d-dynamic.yaml $1 $2 --apply_ego_mask_from $EGO_MASK_PATH

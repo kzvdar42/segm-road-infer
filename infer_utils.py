@@ -11,6 +11,7 @@ import torch
 from tqdm.auto import tqdm
 import ffmpeg
 import onnxruntime as ort
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 try:
     from turbojpeg import TurboJPEG
@@ -28,28 +29,40 @@ def index_ego_masks(root_path: str) -> Dict[str, str]:
     img_name_to_ego_mask_paths = {}
     for ego_mask_path in get_subfolders_with_files(root_path, is_image, True):
         rel_ego_mask_name = os.path.splitext(os.path.relpath(ego_mask_path, root_path))[0]
+        if rel_ego_mask_name.isdigit():
+            rel_ego_mask_name = int(rel_ego_mask_name)
         img_name_to_ego_mask_paths[rel_ego_mask_name] = ego_mask_path
     print(f'Indexed ego masks, found {len(img_name_to_ego_mask_paths)}')
     return img_name_to_ego_mask_paths
 
 class BaseDataset(Dataset, ABC):
 
-    def __init__(self, cfg: addict.Dict):
+    def __init__(self, cfg: addict.Dict, image_load_format: str):
+        # data load config
+        self.image_load_format = image_load_format
         # ego masks config
         self._img_mask = None
         self.img_name_to_ego_mask_paths = None
         self.base_path = cfg.base_path
         if cfg.apply_ego_mask_from:
             self.img_name_to_ego_mask_paths = index_ego_masks(cfg.apply_ego_mask_from)
+            self.img_name_keys = np.array(list(self.img_name_to_ego_mask_paths.keys()))
+            self.img_name_values = np.array(list(self.img_name_to_ego_mask_paths.values()))
         # model cfgs
         self.image_format = cfg.model_cfg.image_format
         self.input_shape = cfg.model_cfg.input_shape
         self.model_type = cfg.model_cfg.model_type
-        self.img_mean = cfg.model_cfg.img_mean
-        self.img_std = cfg.model_cfg.img_std
+        assert type(cfg.model_cfg.img_mean) is type(cfg.model_cfg.img_std), \
+            "both mean and std should be provided"
+        self.img_mean, self.img_std = cfg.model_cfg.img_mean, cfg.model_cfg.img_std
+        if cfg.model_cfg.img_mean is not None:
+            self.img_mean = np.array(cfg.model_cfg.img_mean, dtype=np.float32).reshape((1,1,-1))
+            self.img_std = np.array(cfg.model_cfg.img_std, dtype=np.float32).reshape((1,1,-1))
+            # self.img_mean = torch.FloatTensor(cfg.model_cfg.img_mean).view(1,1,1,-1)
+            # self.img_std = torch.FloatTensor(cfg.model_cfg.img_std).view(1,1,1,-1)
         assert self.model_type in ['onnx', 'torch']
         assert self.image_format in ['rgb', 'bgr']
-    
+
     @property
     def img_mask(self):
         return self._img_mask
@@ -57,73 +70,119 @@ class BaseDataset(Dataset, ABC):
     @img_mask.setter
     def img_mask(self, img_mask):
         self._img_mask = cv2.resize(img_mask, self.input_shape, interpolation=cv2.INTER_NEAREST) == 255
-
-    @lru_cache(maxsize=16)
-    def _cached_load_mask(self, mask_path):
-        return cv2.imread(mask_path, -1)
+    
+    @lru_cache(maxsize=32)
+    def cached_load_mask(self, mask_path: str):
+        img_mask = cv2.imread(mask_path, -1)
+        return cv2.resize(img_mask, self.input_shape, interpolation=cv2.INTER_NEAREST) == 255
 
     def load_nearest_mask(self, img_path):
         if self.img_name_to_ego_mask_paths is None:
             return None
         ego_mask_rel_path = os.path.splitext(os.path.relpath(img_path, self.base_path))[0]
+        # if indexing based on numbers
+        if ego_mask_rel_path.isdigit():
+            ego_mask_num = int(ego_mask_rel_path)
+            mask_idx = np.searchsorted(self.img_name_keys, ego_mask_num)
+            img_mask = self.cached_load_mask(self.img_name_values[mask_idx])
+            self._img_mask = img_mask
+            return img_mask
+        # if indexing based on strings
         if ego_mask_rel_path in self.img_name_to_ego_mask_paths:
-            self.img_mask = self._cached_load_mask(self.img_name_to_ego_mask_paths[ego_mask_rel_path])
+            self._img_mask = self.cached_load_mask(self.img_name_to_ego_mask_paths[ego_mask_rel_path])
         return self.img_mask
 
-    def preprocess(self, img: np.ndarray) -> np.ndarray:
-        # Convert to RGB if needed
-        if self.image_format == "rgb":
-            img = img[:, :, ::-1]
+    def preprocess_numpy(self, img: np.ndarray, img_mask: np.ndarray = None,
+                   resize : bool = True) -> torch.Tensor:
         # Resize
-        if self.input_shape is not None:
+        if resize and self.input_shape is not None:
             img = cv2.resize(img, self.input_shape, interpolation=cv2.INTER_LINEAR)
+        # Convert to RGB/BGR if needed
+        if self.image_format != self.image_load_format:
+            img = np.ascontiguousarray(img[:, :, ::-1])
+            # img = img[..., ::-1]
         # Apply mask if provided
-        if self.img_mask is not None:
-            img[self.img_mask] = 0
+        if img_mask is not None:
+            img[img_mask] = 0
         # Normalize
-        if self.img_mean is not None or self.img_std is not None:
-            self.img_mean = self.img_mean or [0, 0, 0]
-            self.img_std = self.img_std or [1, 1, 1]
+        if self.img_mean is not None:
             img = (img - self.img_mean) / self.img_std
-        img = img.transpose((2, 0, 1)).astype(np.float32)
-        if self.model_type == 'torch':
-            img = torch.as_tensor(img)
-        return img
+        img = img.transpose((2, 0, 1))
+        return torch.as_tensor(img)
+
+    def preprocess_torch(self, img: torch.Tensor, img_mask: torch.Tensor = None,
+                         resize : bool = True) -> torch.Tensor:
+        # Resize
+        if resize and self.input_shape is not None:
+            img = F.interpolate(img, self.input_shape, mode='linear')
+        # Convert to RGB/BGR if needed
+        if self.image_format != self.image_load_format:
+            img = img[:, :, ::-1]
+        # Apply mask if provided
+        if img_mask is not None:
+            img[img_mask] = 0
+        # Normalize
+        if self.img_mean is not None:
+            img = (img - self.img_mean) / self.img_std
+        return img.permute((2, 0, 1))
 
     def collate_fn(self, batch):
-        images, metadata = [], []
-        for sample in batch:
-            images.append(sample.pop('image'))
-            metadata.append(sample)
-        if self.model_type == 'onnx':
-            images = np.stack(images, 0)
-        elif self.model_type == 'torch':
-            images = torch.stack(images, 0)
-        else:
-            raise ValueError(f'Unknown model type ({self.model_type})')
-        return images, metadata
+        images, img_masks, metadata = zip(*batch)
+        img_masks = None if img_masks[0] is None else torch.stack(img_masks, 0)
+        return torch.stack(images, 0), img_masks, metadata
+
+    def collate_fn_numpy(self, batch):
+        images, img_masks, metadata = zip(*batch)
+        images = np.stack(images, 0)
+        img_masks = None if img_masks[0] is None else np.stack(img_masks, 0)
+
+        if self.image_format != self.image_load_format:
+            images = images[..., ::-1]
+        # Apply mask if provided
+        if img_masks is not None:
+            images[img_masks] = 0
+            img_masks = torch.tensor(img_masks)
+        # Normalize
+        if self.img_mean is not None:
+            images = (images - self.img_mean) / self.img_std
+
+        images = images.transpose((0, 3, 1, 2))
+        images = torch.tensor(images)
+        return images, img_masks, metadata
+
+    def collate_fn_torch(self, batch):
+        images, img_masks, metadata = zip(*batch)
+        images = torch.stack(images, 0)
+        img_masks = None if img_masks[0] is None else torch.stack(img_masks, 0)
+
+        if self.image_format != self.image_load_format:
+            images = images[:, :, ::-1]
+        # Apply mask if provided
+        if img_masks is not None:
+            images[img_masks] = 0
+        # Normalize
+        if self.img_mean is not None:
+            images = (images - self.img_mean) / self.img_std
+
+        images = images.permute((0, 3, 1, 2))
+        return images, img_masks, metadata
 
     @classmethod
-    def postprocess(cls, preds: List[np.ndarray], metadata: Dict, ego_mask_cls_id: int, resize_img: bool = False) -> List[np.ndarray]:
-        """Reshape predictions back to original image shape and convert to uint8."""
-        processed = []
+    def postprocess(cls, preds: torch.Tensor, metadata: Dict, img_masks: torch.Tensor,
+                    ego_mask_cls_id: int, resize_img: bool = False) -> torch.Tensor:
+        """Reshape predictions back to original image shape."""
         assert len(preds) == len(metadata)
-        for pred, meta in zip(preds, metadata):
-            # Prepare
-            if pred.shape[0] == 1:
-               pred = pred[0]
-            pred = pred.astype(np.uint8)
-            # Apply ego mask
-            if meta['mask'] is not None:
-                pred[meta['mask']] = ego_mask_cls_id
-            # Resize
-            if resize_img and (pred.shape[0] != meta['height'] or pred.shape[1] != meta['width']):
-                pred = cv2.resize(
-                    pred, (meta['width'], meta['height']),
-                    interpolation=cv2.INTER_NEAREST,
-                )
-            processed.append(pred)
-        return processed
+        # preds = preds.type(torch.uint8)
+        if img_masks is not None:
+            preds.masked_fill_(img_masks, ego_mask_cls_id)
+            # preds[img_masks] = ego_mask_cls_id
+        # if resize_img and (preds.shape[1] != metadata[0]['height'] or preds.shape[2] != metadata[0]['width']):
+            # FIXME: Maybe there is a better way?
+            # res = [cv2.resize(pred, (metadata[0]['width'], metadata[0]['height']), interpolation=cv2.INTER_NEAREST) for pred in preds.cpu().numpy()]
+            # preds = np.stack(res, 0)
+            # import torchvision.transforms.functional as F
+            # preds = F.resize(preds, (metadata[0]['width'], metadata[0]['height']), interpolation=F.InterpolationMode.NEAREST)
+        return preds
 
 
 def index_images_from_folder(input_folder: str, n_skip_frames: int = None) -> List[str]:
@@ -167,7 +226,7 @@ def index_images(args) -> List[str]:
 class ImageDataset(BaseDataset):
     
     def __init__(self, image_paths: List[str], cfg: addict.Dict):
-        super().__init__(cfg)
+        super().__init__(cfg, image_load_format='bgr')
         self.image_paths = image_paths
 
     def __len__(self):
@@ -187,12 +246,14 @@ class ImageDataset(BaseDataset):
         img_mask = self.load_nearest_mask(img_path)
 
         # Read and transform the image
-        img = self.imread(img_path)
+        img = self.imread(img_path)#.astype(np.float32)
         height, width = img.shape[:2]
-        img = self.preprocess(img)
+        img = self.preprocess_numpy(img, img_mask)
+        if img_mask is not None:
+            img_mask = torch.as_tensor(img_mask)
 
-        return {
-            "image": img, "height": height, "width": width, 'image_path': img_path, "mask": img_mask,
+        return img, img_mask, {
+            "height": height, "width": width, 'image_path': img_path,
         }
 
 
@@ -210,7 +271,7 @@ class VideoDataset(BaseDataset):
         return width, height, num_frames, fps
 
     def __init__(self, video_path: str, cfg: addict.Dict, n_skip_frames: int = 0):
-        super().__init__(cfg)
+        super().__init__(cfg, image_load_format='bgr')
         self.video_path = video_path
         self.base_path = os.path.split(video_path)[0]
         self.orig_width, self.orig_height, self.len, self.fps = self.get_video_metadata(video_path)
@@ -220,32 +281,37 @@ class VideoDataset(BaseDataset):
 
     def __len__(self):
         return int(np.ceil(self.len / max(self.n_skip_frames, 1)))
-
-    def __getitem__(self, index: int) -> Dict:
+    
+    def get_frame(self, index: int) -> np.ndarray:
         # If tries to get not the next frame, set cap pos to right position
-        index = index * max(1, self.n_skip_frames)
         if self.cap is None:
             self.cap = cv2.VideoCapture(self.video_path)
         cap_pos = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
         if cap_pos != index:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, index)
-        img = self.cap.read()[1]
+        return self.cap.read()[1]
+
+    def __getitem__(self, index: int) -> Dict:
+        index = index * max(1, self.n_skip_frames)
+        img = self.get_frame(index)#.astype(np.float32)
+
         # Add img_path for consistency
         img_path = os.path.join(self.base_path, f'{index+1:0>5}.jpg')
-        
         # set nearest image_mask
         img_mask = self.load_nearest_mask(img_path)
 
-        img = self.preprocess(img)
-        return {
-            "image": img, "height": self.orig_height, "width": self.orig_width, 'image_path': img_path, "mask": img_mask,
+        img = self.preprocess_numpy(img, img_mask)
+        if img_mask is not None:
+            img_mask = torch.as_tensor(img_mask)
+        return img, img_mask, {
+            "height": self.orig_height, "width": self.orig_width, 'image_path': img_path,
         }
 
 
 def ffmpeg_start_in_process(ffmpeg_args, in_filename, scale):
     return (
         ffmpeg
-        .input(in_filename) #  hwaccel_output_format='cuda' hwaccel='cuda', vcodec='hevc_cuvid'
+        .input(in_filename) #  hwaccel_output_format='cuda', hwaccel='cuda', vcodec='hevc_cuvid'
         .video
         .filter('scale', scale[0], scale[1])
         .filter('setsar', '1')
@@ -258,7 +324,7 @@ def ffmpeg_start_in_process(ffmpeg_args, in_filename, scale):
 def ffmpeg_start_out_process(ffmpeg_args, out_filename, in_width, in_height, out_width, out_height, fps=30):
     return (
         ffmpeg
-        .input('pipe:', format='rawvideo', pix_fmt='gray', s='{}x{}'.format(in_width, in_height), framerate=fps) # , hwaccel='cuvid', hwaccel_output_format='cuda'
+        .input('pipe:', format='rawvideo', pix_fmt='gray', s='{}x{}'.format(in_width, in_height), framerate=fps) # , hwaccel='cuvid', hwaccel_output_format='cuda', hwaccel='auto'
         .filter('scale', out_width, out_height, flags='neighbor')
         .output(
             out_filename,
@@ -270,6 +336,56 @@ def ffmpeg_start_out_process(ffmpeg_args, out_filename, in_width, in_height, out
         .overwrite_output()
         .run_async(pipe_stdin=True)
     )
+
+def ffmpeg_start_out_imgs_process(ffmpeg_args, out_path, out_format, in_width, in_height): # , out_width, out_height
+    return (
+        ffmpeg
+        .input('pipe:', format='rawvideo', pix_fmt='gray', s='{}x{}'.format(in_width, in_height))
+        # .filter('scale', out_width, out_height, flags='neighbor')
+        .output(
+            os.path.join(out_path, f'%05d.{out_format}'),
+            pix_fmt='gray',
+        )
+        .global_args(*ffmpeg_args.out_global_args.split(' ') if ffmpeg_args.out_global_args else [])
+        .overwrite_output()
+        .run_async(pipe_stdin=True)
+    )
+
+device = 'cpu'
+
+rgb_from_yuv_mat = torch.tensor([
+    [1.164,  0,      1.596],
+    [1.164, -0.392, -0.813],
+    [1.164,  2.017,  0    ],
+], device=device).T
+rgb_from_yuv_off = torch.tensor([[[16, 128, 128]]], device=device)
+
+def yuv2rgb(image):
+    image -= rgb_from_yuv_off
+    image @= rgb_from_yuv_mat
+    return torch.clamp(image, 0, 255)
+
+def decode_to_torch(in_bytes, height, width, device, out_dtype=torch.float32):
+    k = width*height
+    y = torch.empty(k,    dtype=torch.uint8).set_(torch.ByteStorage.from_buffer(in_bytes[0:k],        byte_order = 'native')).reshape((height, width)).type(out_dtype).to(device)
+    u = torch.empty(k//4, dtype=torch.uint8).set_(torch.ByteStorage.from_buffer(in_bytes[k:k+(k//4)], byte_order = 'native')).reshape((height//2, width//2)).type(out_dtype).to(device)
+    v = torch.empty(k//4, dtype=torch.uint8).set_(torch.ByteStorage.from_buffer(in_bytes[k+(k//4):],  byte_order = 'native')).reshape((height//2, width//2)).type(out_dtype).to(device)
+    u = u.repeat_interleave(2, dim=-1).repeat_interleave(2, dim=-2)
+    v = v.repeat_interleave(2, dim=-1).repeat_interleave(2, dim=-2)
+
+    return yuv2rgb(torch.stack((y,u,v), -1))
+
+def decode_to_numpy(in_bytes, height, width):
+    k = width*height
+    img = np.stack((
+        np.frombuffer(in_bytes[0:k],dtype=np.uint8).reshape((height, width)),
+        # TODO: is there something faster than this?
+        # np.frombuffer(in_bytes[k:k+(k//4)],dtype=np.uint8).reshape((height//2, width//2)).repeat(2, axis=-1).repeat(2, axis=-2),
+        # np.frombuffer(in_bytes[k+(k//4):],dtype=np.uint8).reshape((height//2, width//2)).repeat(2, axis=-1).repeat(2, axis=-2),
+        cv2.resize(np.frombuffer(in_bytes[k:k+(k//4)],dtype=np.uint8).reshape((height//2, width//2)), None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST),
+        cv2.resize(np.frombuffer(in_bytes[k+(k//4):],dtype=np.uint8).reshape((height//2, width//2)), None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST),
+    ), axis=-1)
+    return cv2.cvtColor(img, cv2.COLOR_YUV2RGB)
 
 class FfmpegVideoDataset(BaseDataset):
 
@@ -284,56 +400,46 @@ class FfmpegVideoDataset(BaseDataset):
         return width, height, num_frames, fps
     
     def __init__(self, video_path: str, cfg: addict.Dict, n_skip_frames: int = 0):
-        super().__init__(cfg)
+        super().__init__(cfg, image_load_format='rgb')
         self.video_path = video_path
         self.base_path = os.path.split(video_path)[0]
         self.orig_width, self.orig_height, self.len, self.fps = self.get_video_metadata(video_path)
         self.width, self.height = self.input_shape
-        assert n_skip_frames == 0, 'FfmpegVideoDataset doesn\'t support n_skip_frames'
+        assert n_skip_frames == 0, "FfmpegVideoDataset doesn\'t support n_skip_frames"
         self.index = 0
         self.in_pipe = ffmpeg_start_in_process(cfg.ffmpeg, video_path, self.input_shape)
     
     def __len__(self) -> int:
         return self.len
-
-    def preprocess(self, img: np.ndarray) -> np.ndarray:
-        # Convert to BGR if needed
-        if self.image_format == "bgr":
-            img = img[:, :, ::-1]
-        # Apply mask if provided
-        if self.img_mask is not None:
-            img[self.img_mask] = 0
-        # Normalize
-        if self.img_mean is not None or self.img_std is not None:
-            self.img_mean = self.img_mean or [0, 0, 0]
-            self.img_std = self.img_std or [1, 1, 1]
-            img = (img - self.img_mean) / self.img_std
-        img = img.transpose((2, 0, 1)).astype(np.float32)
-        if self.model_type == 'torch':
-            img = torch.as_tensor(img)
-        return img
-
-    def __getitem__(self, idx) -> Dict:
-        assert self.index == idx
+    
+    def get_next_frame(self, idx: int):
+        # read buffer
+        assert self.index == idx, "Tried to access frames out of order!"
         in_bytes = self.in_pipe.stdout.read(self.width * self.height * 3 // 2)
         self.index += 1
         if not in_bytes:
             raise StopIteration
         # decode buffer
-        k = self.width*self.height
-        img = np.stack((
-            np.frombuffer(in_bytes[0:k],dtype=np.uint8).reshape((self.height, self.width)),
-            cv2.resize(np.frombuffer(in_bytes[k:k+(k//4)],dtype=np.uint8).reshape((self.height//2, self.width//2)), (self.width,self.height)),
-            cv2.resize(np.frombuffer(in_bytes[k+(k//4):],dtype=np.uint8).reshape((self.height//2, self.width//2)), (self.width,self.height)),
-        ), axis=-1)
-        img = cv2.cvtColor(img.copy(), cv2.COLOR_YUV2RGB)
+        # img = decode_to_torch(in_bytes, self.height, self.width, device)
+        img = decode_to_numpy(in_bytes, self.height, self.width).astype(np.float32)
+        return img
+
+    def __getitem__(self, idx) -> Dict:
         # add img_path for consistency
-        img_path = os.path.join(self.base_path, f'{self.index:0>5}.jpg')
+        img_path = os.path.join(self.base_path, f'{self.index+1:0>5}.jpg')
+
         # get nearest image_mask
         img_mask = self.load_nearest_mask(img_path)
-        img = self.preprocess(img)
-        return {
-            "image": img, "height": self.orig_height, "width": self.orig_width, "image_path": img_path, "mask": img_mask,
+
+        # get frame and transform (no need to resize, as it's already done in ffmpeg)
+        img = self.get_next_frame(idx)
+        img = self.preprocess_numpy(img, img_mask, resize=False)
+        if img_mask is not None:
+            img_mask = torch.as_tensor(img_mask)
+        # img = torch.as_tensor(img)
+        # img = self.preprocess_torch(img, img_mask)
+        return img, img_mask, {
+            "height": self.orig_height, "width": self.orig_width, "image_path": img_path,
         }
 
 
@@ -363,12 +469,25 @@ class ONNXPredictor(Predictor):
             cfg.weights_path, sess_options=so, providers=cfg.providers,
         )
         ort_inputs = self.ort_session.get_inputs()
-        assert len(ort_inputs) == 1, "Support only models with one input"
+        ort_outputs = self.ort_session.get_outputs()
+        assert len(ort_inputs) == 1 and len(ort_outputs) == 1, "Support only models with one input/output"
         self.input_shape = ort_inputs[0].shape
         self.input_name = ort_inputs[0].name
-    
-    def __call__(self, batch):
-        return self.ort_session.run(None, {self.input_name: batch})[0][0]
+        self.output_shape = ort_outputs[0].shape
+        self.output_name = ort_outputs[0].name
+        self.io_binding = self.ort_session.io_binding()
+        self.seg_output = None
+
+    def __call__(self, in_batch):
+        # Create output tensor
+        if self.seg_output is None or self.seg_output.shape[1] != in_batch.shape[0]:
+            self.seg_output = torch.empty((1, in_batch.shape[0], in_batch.shape[-2], in_batch.shape[-1]), dtype=torch.int64, device='cuda')
+            self.io_binding.bind_output(name=self.output_name, device_type='cuda', device_id=0, element_type=np.float32, shape=tuple(self.seg_output.shape), buffer_ptr=self.seg_output.data_ptr())
+
+        self.io_binding.bind_input(name=self.input_name, device_type='cuda', device_id=0, element_type=np.float32, shape=tuple(in_batch.shape), buffer_ptr=in_batch.data_ptr())
+        torch.cuda.synchronize() # sync for non_blocking data transfer
+        self.ort_session.run_with_iobinding(self.io_binding)
+        return self.seg_output[0]
 
 
 class DetectronPredictor(Predictor):
@@ -422,11 +541,4 @@ class DetectronPredictor(Predictor):
     def __call__(self, batch):
         with torch.no_grad():
             with torch.cuda.amp.autocast(self.use_fp16):
-                predictions = self.model(batch)
-        return self.postprocess(predictions)
-    
-    def postprocess(self, predictions: List[torch.Tensor]) -> List[np.ndarray]:
-        processed = []
-        for pred in predictions:
-            processed.append(pred['sem_seg'].argmax(dim=0).detach().cpu().numpy())
-        return processed
+                return self.model(batch)

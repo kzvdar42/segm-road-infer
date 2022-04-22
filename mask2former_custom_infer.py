@@ -1,4 +1,4 @@
-
+import torch
 from torch.nn import functional as F
 
 from detectron2.modeling.postprocessing import sem_seg_postprocess
@@ -6,9 +6,7 @@ from detectron2.structures import ImageList
 from detectron2.utils.memory import retry_if_cuda_oom
 
 def forward(self, images):
-    images = images.to(self.device)
     images = (images - self.pixel_mean) / self.pixel_std
-    # images = [(x.to(self.device) - self.pixel_mean) / self.pixel_std for x in image_batch]
 
     features = self.backbone(images)
     outputs = self.sem_seg_head(features)
@@ -25,10 +23,6 @@ def forward(self, images):
 
     del outputs
 
-    processed_results = []
-    for mask_cls_result, mask_pred_result in zip(mask_cls_results, mask_pred_results):
-        processed_results.append({})
-        # semantic segmentation inference
-        processed_results[-1]["sem_seg"] = retry_if_cuda_oom(self.semantic_inference)(mask_cls_result, mask_pred_result)
-
-    return processed_results
+    mask_cls = F.softmax(mask_cls_results, dim=-1)[..., :-1]
+    mask_pred = mask_pred_results.sigmoid()
+    return torch.einsum("bqc,bqhw->bchw", mask_cls, mask_pred).argmax(dim=1)
