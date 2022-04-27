@@ -56,6 +56,7 @@ def show_preds(predictions: List[np.ndarray], metadata: dict, show: bool = True,
 
 
 def save_preds_as_masks(predictions: List[np.ndarray], metadata: dict, in_base_path: str, out_path: str, ext: str) -> None:
+    predictions = predictions.cpu().numpy()
     for pred, meta in zip(predictions, metadata):
         pred_out_path = get_out_path(meta['image_path'], out_path, in_base_path, ext)
         create_folder_for_file(pred_out_path)
@@ -112,6 +113,7 @@ def get_args():
 
     args.ffmpeg = default_ffmpeg_args()
     if os.path.isfile(args.ffmpeg_setting_file):
+        print(f'Loading ffmpeg settings from {args.ffmpeg_setting_file}')
         with open(args.ffmpeg_setting_file) as in_stream:
             args.ffmpeg = yaml.safe_load(in_stream)
     
@@ -204,8 +206,7 @@ if __name__ == '__main__':
         )
 
         if args.only_ego_vehicle:
-            # predictions = (np.isin(predictions, ego_class_ids) * 255).reshape(predictions.shape)
-            predictions = ((predictions[..., None] == torch.tensor(ego_class_ids).cuda().unsqueeze(0)).any(-1) * 255).cpu().numpy()
+            predictions = ((predictions[..., None] == torch.tensor(ego_class_ids).cuda().unsqueeze(0)).any(-1) * 255)
 
         if args.show or args.save_vis_to:
             # If user exits, destroy all windows and break

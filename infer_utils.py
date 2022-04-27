@@ -56,8 +56,8 @@ class BaseDataset(Dataset, ABC):
             "both mean and std should be provided"
         self.img_mean, self.img_std = cfg.model_cfg.img_mean, cfg.model_cfg.img_std
         if cfg.model_cfg.img_mean is not None:
-            self.img_mean = np.array(cfg.model_cfg.img_mean, dtype=np.float32).reshape((1,1,-1))
-            self.img_std = np.array(cfg.model_cfg.img_std, dtype=np.float32).reshape((1,1,-1))
+            self.img_mean = np.array(cfg.model_cfg.img_mean, dtype=np.float64).reshape(1, -1)
+            self.img_stdinv = 1 / np.array(cfg.model_cfg.img_std, dtype=np.float64).reshape(1, -1)
             # self.img_mean = torch.FloatTensor(cfg.model_cfg.img_mean).view(1,1,1,-1)
             # self.img_std = torch.FloatTensor(cfg.model_cfg.img_std).view(1,1,1,-1)
         assert self.model_type in ['onnx', 'torch']
@@ -69,12 +69,12 @@ class BaseDataset(Dataset, ABC):
 
     @img_mask.setter
     def img_mask(self, img_mask):
-        self._img_mask = cv2.resize(img_mask, self.input_shape, interpolation=cv2.INTER_NEAREST) == 255
+        self._img_mask = cv2.resize(img_mask, self.input_shape, interpolation=cv2.INTER_NEAREST)
     
     @lru_cache(maxsize=32)
     def cached_load_mask(self, mask_path: str):
         img_mask = cv2.imread(mask_path, -1)
-        return cv2.resize(img_mask, self.input_shape, interpolation=cv2.INTER_NEAREST) == 255
+        return cv2.resize(img_mask, self.input_shape, interpolation=cv2.INTER_NEAREST)
 
     def load_nearest_mask(self, img_path):
         if self.img_name_to_ego_mask_paths is None:
@@ -99,16 +99,16 @@ class BaseDataset(Dataset, ABC):
             img = cv2.resize(img, self.input_shape, interpolation=cv2.INTER_LINEAR)
         # Convert to RGB/BGR if needed
         if self.image_format != self.image_load_format:
-            img = np.ascontiguousarray(img[:, :, ::-1])
+            cv2.cvtColor(img, cv2.COLOR_BGR2RGB, img)
             # img = img[..., ::-1]
         # Apply mask if provided
         if img_mask is not None:
-            img[img_mask] = 0
+            cv2.bitwise_and(img, img, img, mask=img_mask)
         # Normalize
         if self.img_mean is not None:
-            img = (img - self.img_mean) / self.img_std
-        img = img.transpose((2, 0, 1))
-        return torch.as_tensor(img)
+            cv2.subtract(img, self.img_mean, img)
+            cv2.multiply(img, self.img_stdinv, img)
+        return torch.from_numpy(img.transpose((2, 0, 1)))
 
     def preprocess_torch(self, img: torch.Tensor, img_mask: torch.Tensor = None,
                          resize : bool = True) -> torch.Tensor:
@@ -141,13 +141,13 @@ class BaseDataset(Dataset, ABC):
         # Apply mask if provided
         if img_masks is not None:
             images[img_masks] = 0
-            img_masks = torch.tensor(img_masks)
+            img_masks = torch.from_numpy(img_masks)
         # Normalize
         if self.img_mean is not None:
             images = (images - self.img_mean) / self.img_std
 
         images = images.transpose((0, 3, 1, 2))
-        images = torch.tensor(images)
+        images = torch.from_numpy(images)
         return images, img_masks, metadata
 
     def collate_fn_torch(self, batch):
@@ -250,7 +250,7 @@ class ImageDataset(BaseDataset):
         height, width = img.shape[:2]
         img = self.preprocess_numpy(img, img_mask)
         if img_mask is not None:
-            img_mask = torch.as_tensor(img_mask)
+            img_mask = torch.from_numpy(img_mask == 255)
 
         return img, img_mask, {
             "height": height, "width": width, 'image_path': img_path,
@@ -302,7 +302,7 @@ class VideoDataset(BaseDataset):
 
         img = self.preprocess_numpy(img, img_mask)
         if img_mask is not None:
-            img_mask = torch.as_tensor(img_mask)
+            img_mask = torch.from_numpy(img_mask == 255)
         return img, img_mask, {
             "height": self.orig_height, "width": self.orig_width, 'image_path': img_path,
         }
@@ -435,7 +435,7 @@ class FfmpegVideoDataset(BaseDataset):
         img = self.get_next_frame(idx)
         img = self.preprocess_numpy(img, img_mask, resize=False)
         if img_mask is not None:
-            img_mask = torch.as_tensor(img_mask)
+            img_mask = torch.from_numpy(img_mask == 255)
         # img = torch.as_tensor(img)
         # img = self.preprocess_torch(img, img_mask)
         return img, img_mask, {
