@@ -1,4 +1,5 @@
 import argparse
+from curses import meta
 import os
 import sys
 from socket import timeout
@@ -20,7 +21,7 @@ from utils import (
 )
 from infer_utils import (
     FfmpegVideoDataset, Predictor, ONNXPredictor, DetectronPredictor, ImageDataset, VideoDataset, ffmpeg_start_out_imgs_process,
-    ffmpeg_start_out_process, index_images
+    ffmpeg_start_out_process, index_images, video_pipe
 )
 
 
@@ -182,21 +183,46 @@ if __name__ == '__main__':
             args.ffmpeg, args.out_path, *args.model_cfg.input_shape, out_width, out_height, fps
         )
         print(f'Saving results to videofile with {fps} fps and {(out_width, out_height)} frame size.')
-    # else:
-    #     out_writer = ffmpeg_start_out_imgs_process(
-    #         args.ffmpeg, args.out_path, args.out_format, *args.model_cfg.input_shape
-    #     )
+    else:
+        out_writer = ffmpeg_start_out_imgs_process(
+            args.ffmpeg, args.out_path, args.out_format, *args.model_cfg.input_shape
+        )
 
     # Load model
     model = load_predictor(args.model_cfg)
     print(f'Infer image size: {args.model_cfg.input_shape}; batch size: {args.model_cfg.batch_size}')
 
-    # Infer model
-    # XXX: Using pbar like this, because otherwise ffmpeg subprocess wouldn't finish
+    from nvidia.dali.plugin.pytorch import DALIGenericIterator
+    pipe = video_pipe(
+        filename='src_cfr_test.mp4', img_width=args.model_cfg.input_shape[0], img_height=args.model_cfg.input_shape[1],
+        mean=args.model_cfg.img_mean, std=args.model_cfg.img_std, sequence_length=args.model_cfg.batch_size,
+        batch_size=1, num_threads=2, device_id=0, seed=12345
+    )
+    pipe.build()
+    dali_iter = DALIGenericIterator([pipe], ['images', 'shapes', 'start_frame_num'])
+
+    # # Infer model
+    # # XXX: Using pbar like this, because otherwise ffmpeg subprocess wouldn't finish
     if not args.no_tqdm:
         pbar = tqdm(total=len(dataloader))
     resize_img = args.out_format != 'mp4' and not args.only_ego_vehicle
-    for n_batch, (images, img_masks, metadata) in enumerate(dataloader, 1):
+    from time import time
+    start_time = time()
+    for n_batch, (pipes_out) in enumerate(dali_iter, 1):
+        batch = pipes_out[0]
+        images = batch['images'].squeeze()
+        start_frame_num = batch['start_frame_num'].cpu().numpy()
+        shapes = batch['shapes'].cpu().numpy()
+        img_masks = None
+        metadata = []
+        for first_frame_num, shape in zip(start_frame_num, shapes):
+            for off in range(images.shape[0] // len(shapes)):
+                n_frame = first_frame_num.item() + off
+                metadata.append({
+                    "height": shape[0], "width": shape[1], "image_path": f'{n_frame:0>5}.jpg',
+                })
+        if time() - start_time > 60:
+            break
         images = images.to('cuda', non_blocking=True)
         if img_masks is not None:
             img_masks = img_masks.to('cuda', non_blocking=True)

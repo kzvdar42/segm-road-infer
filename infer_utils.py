@@ -308,14 +308,30 @@ class VideoDataset(BaseDataset):
         }
 
 
+from nvidia.dali import pipeline_def
+import nvidia.dali.fn as fn
+import nvidia.dali.types as types
+
+
+@pipeline_def
+def video_pipe(filename, img_height, img_width, mean, std, sequence_length):
+    video, labels, start_frame_num = fn.readers.video(device="gpu", filenames=[filename], labels=[], sequence_length=sequence_length,
+                                     random_shuffle=False, image_type=types.RGB, dtype=types.FLOAT, initial_fill=sequence_length*2, enable_frame_num=True)
+    shapes = fn.shapes(video, device="gpu")
+    video = fn.resize(video, size=[img_width, img_height], device="gpu")
+    if mean is not None:
+        video = fn.crop_mirror_normalize(video, output_layout="FCHW", mean=mean, std=std, image_type=types.RGB, device="gpu")
+    return video, shapes, start_frame_num
+
+
 def ffmpeg_start_in_process(ffmpeg_args, in_filename, scale):
     return (
         ffmpeg
-        .input(in_filename) #  hwaccel_output_format='cuda', hwaccel='cuda', vcodec='hevc_cuvid'
+        .input(in_filename, vcodec='hevc_cuvid')
         .video
         .filter('scale', scale[0], scale[1])
         .filter('setsar', '1')
-        .output('pipe:', format='rawvideo', pix_fmt='yuv420p')  # vcodec='h264_nvenc'
+        .output('pipe:', format='rawvideo', pix_fmt='yuv420p')
         .global_args(*ffmpeg_args.in_global_args.split(' ') if ffmpeg_args.in_global_args else [])
         .run_async(pipe_stdout=True)
     )
@@ -324,7 +340,7 @@ def ffmpeg_start_in_process(ffmpeg_args, in_filename, scale):
 def ffmpeg_start_out_process(ffmpeg_args, out_filename, in_width, in_height, out_width, out_height, fps=30):
     return (
         ffmpeg
-        .input('pipe:', format='rawvideo', pix_fmt='gray', s='{}x{}'.format(in_width, in_height), framerate=fps) # , hwaccel='cuvid', hwaccel_output_format='cuda', hwaccel='auto'
+        .input('pipe:', format='rawvideo', pix_fmt='gray', s='{}x{}'.format(in_width, in_height), framerate=fps)
         .filter('scale', out_width, out_height, flags='neighbor')
         .output(
             out_filename,
