@@ -1,8 +1,7 @@
 out_vcodec: hevc_nvenc # hevc_nvenc | h264_nvenc | libx264 | libx265
-out_pix_fmt: yuv420p
+out_pix_fmt: yuv444p16le  # yuv444p16le yuvj420p
 output_args:
-    crf: 0
-    # preset: ultrafast
-in_global_args: '-hide_banner -loglevel error'
-out_global_args: '-hide_banner -loglevel error'
+    preset: lossless
+in_global_args: '-hide_banner -loglevel warning'
+out_global_args: '-hide_banner -loglevel warning'
 max_timeout: 15

@@ -84,7 +84,10 @@ class BaseDataset(Dataset, ABC):
         if ego_mask_rel_path.isdigit():
             ego_mask_num = int(ego_mask_rel_path)
             mask_idx = np.searchsorted(self.img_name_keys, ego_mask_num)
-            img_mask = self.cached_load_mask(self.img_name_values[mask_idx])
+            try:
+                img_mask = self.cached_load_mask(self.img_name_values[mask_idx])
+            except IndexError:
+                img_mask = self.cached_load_mask(self.img_name_values[-1])
             self._img_mask = img_mask
             return img_mask
         # if indexing based on strings
@@ -308,14 +311,18 @@ class VideoDataset(BaseDataset):
         }
 
 
-def ffmpeg_start_in_process(ffmpeg_args, in_filename, scale):
+def ffmpeg_start_in_process(ffmpeg_args, in_filename, scale, codec_name=None):
+    vcodec = {
+        'hevc': 'hevc_cuvid',
+        'h264': 'h264_cuvid',
+    }.get(codec_name, None)
     return (
         ffmpeg
-        .input(in_filename) #  hwaccel_output_format='cuda', hwaccel='cuda', vcodec='hevc_cuvid'
+        .input(in_filename, vcodec=vcodec)
         .video
         .filter('scale', scale[0], scale[1])
         .filter('setsar', '1')
-        .output('pipe:', format='rawvideo', pix_fmt='yuv420p')  # vcodec='h264_nvenc'
+        .output('pipe:', format='rawvideo', pix_fmt='yuv420p')
         .global_args(*ffmpeg_args.in_global_args.split(' ') if ffmpeg_args.in_global_args else [])
         .run_async(pipe_stdout=True)
     )
@@ -397,17 +404,18 @@ class FfmpegVideoDataset(BaseDataset):
         height = int(video_stream['height'])
         num_frames = int(video_stream['nb_frames'])
         fps = int(eval(video_stream['r_frame_rate']))
-        return width, height, num_frames, fps
+        codec_name = video_stream['codec_name']
+        return width, height, num_frames, fps, codec_name
     
     def __init__(self, video_path: str, cfg: addict.Dict, n_skip_frames: int = 0):
         super().__init__(cfg, image_load_format='rgb')
         self.video_path = video_path
         self.base_path = os.path.split(video_path)[0]
-        self.orig_width, self.orig_height, self.len, self.fps = self.get_video_metadata(video_path)
+        self.orig_width, self.orig_height, self.len, self.fps, self.codec_name = self.get_video_metadata(video_path)
         self.width, self.height = self.input_shape
         assert n_skip_frames == 0, "FfmpegVideoDataset doesn\'t support n_skip_frames"
         self.index = 0
-        self.in_pipe = ffmpeg_start_in_process(cfg.ffmpeg, video_path, self.input_shape)
+        self.in_pipe = ffmpeg_start_in_process(cfg.ffmpeg, video_path, self.input_shape, self.codec_name)
     
     def __len__(self) -> int:
         return self.len

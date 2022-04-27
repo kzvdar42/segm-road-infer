@@ -109,7 +109,7 @@ def get_args():
     if args.n_skip_frames < 0:
         if not args.in_path.endswith('.mp4'):
             args.n_skip_frames = 30
-        args.n_skip_frames = abs(args.n_skip_frames) * FfmpegVideoDataset.get_video_metadata(args.in_path)[-1]
+        args.n_skip_frames = abs(args.n_skip_frames) * FfmpegVideoDataset.get_video_metadata(args.in_path)[-2]
 
     args.ffmpeg = default_ffmpeg_args()
     if os.path.isfile(args.ffmpeg_setting_file):
@@ -206,13 +206,13 @@ if __name__ == '__main__':
         )
 
         if args.only_ego_vehicle:
-            predictions = ((predictions[..., None] == torch.tensor(ego_class_ids).cuda().unsqueeze(0)).any(-1) * 255)
+            predictions = ((predictions[..., None] == torch.as_tensor(ego_class_ids).cuda().unsqueeze(0)).any(-1) * 255)
 
         if args.show or args.save_vis_to:
             # If user exits, destroy all windows and break
             if show_preds(predictions, metadata, args.show, args.save_vis_to, args.window_size):
                 cv2.destroyAllWindows()
-                break  
+                break
 
         if args.out_path:
             if args.out_format in ['png', 'jpg']:
