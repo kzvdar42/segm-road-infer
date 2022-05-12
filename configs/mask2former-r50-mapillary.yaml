@@ -10,4 +10,6 @@ img_std: null # Already fused in the model
 num_workers: 4
 input_shapes:
   2048,1024: 5
-  1024,512: 15
+  1024,512: 10
+  768,384: 10
+  512,512: 16

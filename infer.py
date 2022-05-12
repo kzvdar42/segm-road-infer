@@ -3,6 +3,7 @@ import os
 import sys
 from socket import timeout
 import subprocess
+import time
 from typing import List, Tuple
 import yaml
 
@@ -14,7 +15,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from utils import (
-    is_image, load_model_config,
+    PseudoTqdm, is_image, load_model_config,
     colorize_pred, apply_mask, create_folder_for_file, get_classes,
     get_out_path
 )
@@ -92,13 +93,14 @@ def get_args():
     parser.add_argument('--n_skip_frames', type=int, default=0, help='how many frames to skip during inference [default: 0]')
     parser.add_argument('--only_ego_vehicle', action='store_true', help='store only ego vehicle class')
     parser.add_argument('--skip_processed', action='store_true', help='skip already processed frames')
+    parser.add_argument('--test', action='store_true', help='test speed on 60 seconds runtime')
     parser.add_argument('--save_vis_to', default=None, help='path to save the visualized predictions. [default: None]')
     parser.add_argument('--window_size', type=int, nargs=2, default=(1280, 720), help='window size for visualization [default: (1280, 720)]')
     parser.add_argument('--ffmpeg_setting_file', default='.ffmpeg_settings.yaml', help='path to ffmpeg settings. [default: `.ffmpeg_settings.yaml`]')
     parser.add_argument('--no_tqdm', action='store_true', help='flag to not use tqdm progress bar')
 
     args = parser.parse_args()
-    args.print_every_n = 5
+    args.print_every_n = 250
 
     if args.out_path.endswith('.mp4'):
         args.out_format = 'mp4'
@@ -193,10 +195,11 @@ if __name__ == '__main__':
 
     # Infer model
     # XXX: Using pbar like this, because otherwise ffmpeg subprocess wouldn't finish
-    if not args.no_tqdm:
-        pbar = tqdm(total=len(dataloader))
+    pbar = tqdm(total=len(dataset)) if not args.no_tqdm else PseudoTqdm()
     resize_img = args.out_format != 'mp4' and not args.only_ego_vehicle
-    for n_batch, (images, img_masks, metadata) in enumerate(dataloader, 1):
+    for images, img_masks, metadata in dataloader:
+        if args.test and time.time() - pbar.start_t > 60:
+            break
         images = images.to('cuda', non_blocking=True)
         if img_masks is not None:
             img_masks = img_masks.to('cuda', non_blocking=True)
@@ -222,14 +225,12 @@ if __name__ == '__main__':
                 save_preds_to_ffmpeg(predictions, out_writer)
             else:
                 raise ValueError(f'Unknown out format! ({args.out_format})')
+        
+        pbar.update(images.shape[0])
         if args.no_tqdm:
-            if n_batch % args.print_every_n == 0:
-                print(f'Processed {n_batch} batches')
-        else:
-            pbar.update(1)
-
-    if not args.no_tqdm:
-        pbar.close()
+            if pbar.n_runs % args.print_every_n == 0:
+                print(f'Processed {pbar.n_runs} images, at rate {pbar.rate:.2f} imgs/s')
+    pbar.close()
 
     # Exit from or kill ffmpeg processes
     if args.out_format == 'mp4':

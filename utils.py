@@ -1,5 +1,6 @@
 import os
 import yaml
+import time
 from typing import Callable, Generator
 
 import addict
@@ -71,6 +72,23 @@ def get_classes(dataset_type: str):
     cls_name_to_id = {c:c_id for c_id, c in enumerate(classes)}
     cls_id_to_name = {c_id:c for c, c_id in cls_name_to_id.items()}
     return classes, cls_name_to_id, cls_id_to_name
+
+
+class PseudoTqdm:
+
+    def __init__(self):
+        self.start_t = time.time() 
+        self.n_runs = 0
+
+    @property
+    def rate(self):
+        return self.n_runs / (time.time() - self.start_t)
+
+    def update(self, n_runs : int):
+        self.n_runs += n_runs
+    
+    def close(self):
+        pass
 
 
 def cityscapes_palette():

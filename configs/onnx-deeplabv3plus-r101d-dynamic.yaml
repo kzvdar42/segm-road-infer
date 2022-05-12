@@ -9,4 +9,3 @@ batch_size: 1
 num_workers: 4
 input_shapes:
   2048,1024: 1
-  1024,512: 1
