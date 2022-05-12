@@ -24,7 +24,7 @@ if [ ! -z "$MAIN_BATCH_SIZE" ]; then
 fi
 
 EGO_BATCH_SIZE_ARG=""
-if [ ! -z "$MAIN_BATCH_SIZE" ]; then
+if [ ! -z "$EGO_BATCH_SIZE" ]; then
   EGO_BATCH_SIZE_ARG="--batch_size $EGO_BATCH_SIZE"
 fi
 
