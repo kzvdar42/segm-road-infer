@@ -1,7 +1,5 @@
 import argparse
 import os
-import sys
-from socket import timeout
 import subprocess
 import time
 from typing import List, Tuple
@@ -100,7 +98,7 @@ def get_args():
     parser.add_argument('--no_tqdm', action='store_true', help='flag to not use tqdm progress bar')
 
     args = parser.parse_args()
-    args.print_every_n = 250
+    args.print_every_n = 500
 
     if args.out_path.endswith('.mp4'):
         args.out_format = 'mp4'
@@ -126,14 +124,17 @@ def get_args():
         if args.batch_size:
             args.model_cfg.batch_size = args.batch_size
         else:
+            default_batch_size = list(args.model_cfg.input_shapes.values())[0]
             args.model_cfg.batch_size = args.model_cfg.input_shapes.get(
-                ','.join(map(str,args.input_shape)), args.model_cfg.batch_size
+                ','.join(map(str,args.input_shape)), default_batch_size
             )
     else:
         # Take first value as default
         input_shape = next(iter(args.model_cfg.input_shapes.keys()))
         args.model_cfg.batch_size = args.model_cfg.input_shapes[input_shape]
         args.model_cfg.input_shape = tuple(int(side) for side in input_shape.split(','))
+    # make print divisible by batch_size
+    args.print_every_n = (args.print_every_n // args.model_cfg.batch_size) * args.model_cfg.batch_size
 
     args = addict.Dict(vars(args))
     return args
@@ -230,6 +231,9 @@ if __name__ == '__main__':
         if args.no_tqdm:
             if pbar.n_runs % args.print_every_n == 0:
                 print(f'Processed {pbar.n_runs} images, at rate {pbar.rate:.2f} imgs/s')
+
+    if args.no_tqdm:
+        print(f'Processed {pbar.n_runs} images, at rate {pbar.rate:.2f} imgs/s. Total: {time.time() - pbar.start_t:.2f} sec')
     pbar.close()
 
     # Exit from or kill ffmpeg processes

@@ -5,9 +5,9 @@ weights_path: 'weights/deeplabv3plus-r18b.onnx'
 providers: ['CUDAExecutionProvider', 'CPUExecutionProvider'] # 'TensorrtExecutionProvider'
 img_mean: [123.675, 116.28, 103.53]
 img_std: [58.395, 57.12, 57.375]
-num_workers: 4
+num_workers: 2
 input_shapes:
-  2048,1024: 3
-  1024,512: 12
-  768,384: 12
-  512,512: 12
+  2048,1024: 2
+  1024,512: 2
+  768,384: 2
+  512,512: 2

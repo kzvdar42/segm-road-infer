@@ -7,7 +7,7 @@ opts: []
 weights_path: weights/maskformer2_R50_bs16_300k.pkl
 img_mean: null # Already fused in the model
 img_std: null # Already fused in the model
-num_workers: 4
+num_workers: 2
 input_shapes:
   2048,1024: 5
   1024,512: 10
