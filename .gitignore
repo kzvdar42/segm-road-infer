@@ -135,3 +135,5 @@ preds
 *.png
 *.jpg
 *.onnx
+*.profile
+*.engine

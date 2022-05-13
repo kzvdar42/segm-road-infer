@@ -55,7 +55,6 @@ def show_preds(predictions: List[np.ndarray], metadata: dict, show: bool = True,
 
 
 def save_preds_as_masks(predictions: List[np.ndarray], metadata: dict, in_base_path: str, out_path: str, ext: str) -> None:
-    predictions = predictions.cpu().numpy()
     for pred, meta in zip(predictions, metadata):
         pred_out_path = get_out_path(meta['image_path'], out_path, in_base_path, ext)
         create_folder_for_file(pred_out_path)
@@ -64,7 +63,7 @@ def save_preds_as_masks(predictions: List[np.ndarray], metadata: dict, in_base_p
 
 
 def save_preds_to_ffmpeg(predictions: List[np.ndarray], video_writer: subprocess.Popen) -> None:
-    video_writer.stdin.write(predictions.type(torch.uint8).cpu().numpy().tobytes())
+    video_writer.stdin.write(predictions.tobytes())
 
 
 def default_ffmpeg_args():
@@ -142,6 +141,7 @@ def get_args():
 
 if __name__ == '__main__':
     # Get args & load model config
+    script_start_time = time.time()
     torch.backends.cudnn.benchmark = True
     args = get_args()
     print('Args:', args, sep='\n')
@@ -149,8 +149,9 @@ if __name__ == '__main__':
     # Load classes
     classes, cls_name_to_id, cls_id_to_name = get_classes(args.model_cfg.classes)
     if args.only_ego_vehicle:
-        ego_class_ids = [cls_name_to_id[cls_name] for cls_name in ['ego vehicle', 'car mount']]
-        assert len(ego_class_ids), 'Model without ego vehicle classes!'
+        ego_class_ids = np.array([cls_name_to_id[cls_name] for cls_name in ['ego vehicle', 'car mount']])
+        ego_class_ids = torch.from_numpy(ego_class_ids).to(device='cuda', dtype=torch.uint8)[None, ...]
+        assert ego_class_ids.shape[-1], 'Model without ego vehicle classes!'
 
     # Create dataloader (if folder/image/txt_file -> image dataset, otherwise video)
     if os.path.isdir(args.in_path) or is_image(args.in_path) or args.in_path.endswith('.txt'):
@@ -194,6 +195,10 @@ if __name__ == '__main__':
     model = load_predictor(args.model_cfg)
     print(f'Infer image size: {args.model_cfg.input_shape}; batch size: {args.model_cfg.batch_size}')
 
+    # Test pre-run
+    if args.test:
+        model(torch.rand((args.model_cfg.batch_size, 3, *args.model_cfg.input_shape), device='cuda'))
+
     # Infer model
     # XXX: Using pbar like this, because otherwise ffmpeg subprocess wouldn't finish
     pbar = tqdm(total=len(dataset)) if not args.no_tqdm else PseudoTqdm()
@@ -210,7 +215,11 @@ if __name__ == '__main__':
         )
 
         if args.only_ego_vehicle:
-            predictions = ((predictions[..., None] == torch.as_tensor(ego_class_ids).cuda().unsqueeze(0)).any(-1) * 255)
+            predictions = ((predictions[..., None].byte() == ego_class_ids).any(-1) * 255)
+            # predictions = torch.isin(predictions.byte(), ego_class_ids[0]) * 255
+
+        # Transfer to numpy
+        predictions = predictions.byte().cpu().numpy()
 
         if args.show or args.save_vis_to:
             # If user exits, destroy all windows and break
@@ -230,7 +239,7 @@ if __name__ == '__main__':
         pbar.update(images.shape[0])
         if args.no_tqdm:
             if pbar.n_runs % args.print_every_n == 0:
-                print(f'Processed {pbar.n_runs} images, at rate {pbar.rate:.2f} imgs/s')
+                print(f'Processed {pbar.n_runs} images, at rate {pbar.rate:.2f} imgs/s', flush=True)
 
     if args.no_tqdm:
         print(f'Processed {pbar.n_runs} images, at rate {pbar.rate:.2f} imgs/s. Total: {time.time() - pbar.start_t:.2f} sec')
@@ -249,3 +258,4 @@ if __name__ == '__main__':
         else:
             out_writer.communicate()
             print(f'ffmpeg succesfully exited with code {out_writer.returncode}')
+    print(f'Total script time: {time.time() - script_start_time:.2f}')

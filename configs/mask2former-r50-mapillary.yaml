@@ -9,7 +9,7 @@ img_mean: null # Already fused in the model
 img_std: null # Already fused in the model
 num_workers: 2
 input_shapes:
-  2048,1024: 5
+  2048,1024: 3
   1024,512: 10
   768,384: 10
   512,512: 16

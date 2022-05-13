@@ -473,6 +473,12 @@ class ONNXPredictor(Predictor):
         # so.execution_mode = ort.ExecutionMode.ORT_PARALLEL#ORT_SEQUENTIAL
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         # Load model
+
+        try:
+            cfg.providers[cfg.providers.index('CUDAExecutionProvider')] = ("CUDAExecutionProvider", {"cudnn_conv_use_max_workspace": '1'})
+        except ValueError:
+            pass
+
         self.ort_session = ort.InferenceSession(
             cfg.weights_path, sess_options=so, providers=cfg.providers,
         )
@@ -489,6 +495,7 @@ class ONNXPredictor(Predictor):
     def __call__(self, in_batch):
         # Create output tensor
         if self.seg_output is None or self.seg_output.shape[1] != in_batch.shape[0]:
+            # self.seg_output = torch.empty((1, 150, 64, 64), dtype=torch.int64, device='cuda')
             self.seg_output = torch.empty((1, in_batch.shape[0], in_batch.shape[-2], in_batch.shape[-1]), dtype=torch.int64, device='cuda')
             self.io_binding.bind_output(name=self.output_name, device_type='cuda', device_id=0, element_type=np.float32, shape=tuple(self.seg_output.shape), buffer_ptr=self.seg_output.data_ptr())
 
