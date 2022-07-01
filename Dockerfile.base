@@ -1,0 +1,90 @@
+FROM nvidia/cuda:11.3.0-devel-ubuntu20.04
+
+ENV TZ=Europe/Moscow
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y software-properties-common git wget vim
+RUN add-apt-repository ppa:deadsnakes/ppa
+RUN apt-get install -y python3-dev python3-pip
+
+RUN pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
+RUN python3 -m pip install 'git+https://github.com/facebookresearch/detectron2.git'
+
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+RUN pip3 install onnxruntime-gpu
+
+RUN ln -sf /usr/bin/python3.8 /usr/bin/python3
+RUN apt-get install -y python3-apt --reinstall
+RUN wget "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-ubuntu2004.pin"
+RUN mv cuda-ubuntu2004.pin /etc/apt/preferences.d/cuda-repository-pin-600
+RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/7fa2af80.pub
+RUN add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /"
+RUN apt-get update
+
+RUN apt-get install -y libcudnn8=8.2.1.32-1+cuda11.3
+RUN apt-get install -y libcudnn8-dev=8.2.1.32-1+cuda11.3
+
+WORKDIR /opt
+RUN git clone -b main https://github.com/facebookresearch/Mask2Former.git
+WORKDIR /opt/Mask2Former
+RUN pip3 install -r requirements.txt
+ENV CUDA_HOME=/usr/local/cuda
+# ENV FORCE_CUDA=1
+# ENV TORCH_CUDA_ARCH_LIST=”11.3”
+WORKDIR mask2former/modeling/pixel_decoder/ops
+# this MUST be executed at device which as nvidia driver, FORCE_CUDA does not help
+RUN sh make.sh
+
+# RUN apt-get update && apt-get install ffmpeg libsm6 libxext6  -y
+
+# !!!!!
+# RUN apt-get update && apt-get install -y libx264-dev libx265-dev libvpx-dev libopus-dev
+
+WORKDIR /opt/src
+RUN git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git
+RUN cd nv-codec-headers && make install && cd ..
+
+RUN apt-get update && apt-get install -y pkg-config apt-utils build-essential yasm cmake libtool libc6 libc6-dev unzip wget libnuma1 libnuma-dev
+# RUN ./configure --enable-gpl --enable-libx264 --enable-libx265 --enable-libopus --enable-libvpx --enable-nonfree --enable-cuda-nvcc --enable-libnpp --extra-cflags=-I/usr/local/cuda/include --extra-ldflags=-L/usr/local/cuda/lib64 --disable-static --enable-shared
+
+RUN apt-get update && apt-get -y install build-essential autoconf automake cmake libtool git checkinstall nasm yasm libass-dev libfreetype6-dev libsdl2-dev p11-kit libva-dev libvdpau-dev libvorbis-dev libxcb1-dev libxcb-shm0-dev libxcb-xfixes0-dev pkg-config texinfo wget zlib1g-dev libchromaprint-dev frei0r-plugins-dev gnutls-dev ladspa-sdk libcaca-dev libcdio-paranoia-dev libcodec2-dev libfontconfig1-dev libfreetype6-dev libfribidi-dev libgme-dev libgsm1-dev libjack-dev libmodplug-dev libmp3lame-dev libopencore-amrnb-dev libopencore-amrwb-dev libopenjp2-7-dev libopenmpt-dev libopus-dev libpulse-dev librsvg2-dev librubberband-dev librtmp-dev libshine-dev libsmbclient-dev libsnappy-dev libsoxr-dev libspeex-dev libssh-dev libtesseract-dev libtheora-dev libtwolame-dev libv4l-dev libvo-amrwbenc-dev libvorbis-dev libvpx-dev libwavpack-dev libwebp-dev libx264-dev libx265-dev libxvidcore-dev libxml2-dev libzmq3-dev libzvbi-dev liblilv-dev libopenal-dev opencl-dev libjack-dev
+
+
+WORKDIR /opt/src
+RUN git clone https://aomedia.googlesource.com/aom 
+RUN cd aom
+RUN ls -l
+RUN cmake aom/ -DBUILD_SHARED_LIBS=1
+RUN make
+RUN checkinstall -y --deldoc=yes --pkgversion=1.0.0
+RUN cd ..
+
+RUN apt install -y zlib1g-dev libcunit1-dev libcunit1-dev
+WORKDIR /opt/src
+RUN git clone https://github.com/hoene/libmysofa mysopha && cd mysopha/build && cmake .. && cpack
+#RUN apt-get remove libmysopha0 libmysopha-dev
+#RUN dpkg -i *.deb
+RUN dpkg -i /opt/src/mysopha/build/libmysofa-1.2.2-Linux.deb
+
+WORKDIR /opt/src
+RUN git clone https://git.ffmpeg.org/ffmpeg.git ffmpeg/
+
+
+#RUN apt-get update && apt-get install -y libiec61883-0 libiec61883-dev 
+RUN apt-get update && apt-get install -y libdrm-dev 
+RUN apt-get update && apt-get install -y flite1-dev libflite1 
+RUN apt-get update && apt-get install -y libvidstab-dev 
+RUN apt-get update && apt-get install -y libomxil-bellagio-dev 
+WORKDIR ffmpeg
+
+ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu
+RUN ./configure --prefix=/usr --extra-version=1ubuntu0.1 --toolchain=hardened --libdir=/usr/lib/x86_64-linux-gnu --incdir=/usr/include/x86_64-linux-gnu --arch=amd64 --enable-gpl --disable-stripping  --enable-gnutls --enable-ladspa --enable-libaom --enable-libass --enable-libcaca --enable-libcdio --enable-libcodec2 --enable-libflite --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libgme --enable-libgsm --enable-libjack --enable-libmp3lame --enable-libmysofa --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libpulse --enable-librsvg --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libssh --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx265 --enable-libxml2 --enable-libxvid --enable-libzmq --enable-libzvbi --enable-lv2 --enable-omx --enable-openal --enable-opencl --enable-opengl --enable-sdl2 --enable-libdrm --enable-nvenc --enable-chromaprint --enable-frei0r --enable-libx264 --enable-nonfree --enable-cuda-nvcc --enable-libnpp --extra-cflags=-I/usr/local/cuda/include --extra-ldflags=-L/usr/local/cuda/lib64 --enable-shared
+
+RUN make -j 8
+RUN make install
+RUN apt-get update && apt-get install libsm6 libxext6  -y
+
+ENV MASK2FORMER_HOME=/opt/Mask2Former
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+
+RUN pip3 install --extra-index-url https://developer.download.nvidia.com/compute/redist --upgrade nvidia-dali-cuda110

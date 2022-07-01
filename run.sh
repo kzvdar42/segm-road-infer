@@ -3,11 +3,13 @@ set -e
 # Define enviroment variables
 if [ -z "$MASK2FORMER_HOME" ]; then
   echo "Warning: MASK2FORMER_HOME env var is not set and will be set to a default value"
-  export MASK2FORMER_HOME=/mnt/c/Users/Vlad/Desktop/ny-guiderails/Mask2Former
+  export MASK2FORMER_HOME=/mnt/c/Users/Vlad/Desktop/hdmaps-dev/slam_segmentation_inference/Mask2Former
 fi
 export PYTHONWARNINGS="ignore"
 export ORT_TENSORRT_DLA_ENABLE=1
 export ORT_TENSORRT_ENGINE_CACHE_ENABLE=1
+export ORT_TENSORRT_CACHE_PATH="tensorrt_cache/"
+# export ORT_TENSORRT_FP16_ENABLE=1
 EGO_MASK_PATH="ego-vehicle-mask/"
 # Ensure that script hast two inputs: in_path, out_path. Otherwise exit
 if [ "$#" -ne 2 ]; then
@@ -56,7 +58,7 @@ python infer.py $EGO_MODEL_CONFIG $1 $EGO_MASK_PATH --only_ego_vehicle --n_skip_
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 echo "~~~~~~~~~~~~~ Calculating segmentation masks ~~~~~~~~~~~~~"
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-python infer.py $MAIN_MODEL_CONFIG $1 $2 --apply_ego_mask_from $EGO_MASK_PATH --no_tqdm $MAIN_INPUT_SHAPE_ARG $MAIN_BATCH_SIZE_ARG # --input_shape 1024 512
+python infer.py $MAIN_MODEL_CONFIG $1 $2 --apply_ego_mask_from $EGO_MASK_PATH --no_tqdm $MAIN_INPUT_SHAPE_ARG $MAIN_BATCH_SIZE_ARG
 
 # Other onnx models
 # python infer.py configs/onnx-deeplabv3plus-r18d-dynamic.yaml $1 $2 --apply_ego_mask_from $EGO_MASK_PATH

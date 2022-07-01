@@ -137,3 +137,4 @@ preds
 *.onnx
 *.profile
 *.engine
+*.mp4
