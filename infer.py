@@ -23,19 +23,13 @@ def infer_model(model, dataloader, args, out_writer):
     # XXX: Using pbar like this, because otherwise ffmpeg subprocess wouldn't finish
     pbar = tqdm(total=len(dataset)) if not args.no_tqdm else PseudoTqdm()
     resize_img = args.out_format != 'mp4' and not args.only_ego_vehicle
-    stats = dict(data_load=[], model_infer=[], postprocess=[], save=[])
-    last_time = time.time()
     for images, img_masks, metadata in dataloader:
         if args.test and time.time() - pbar.start_t > 60:
             break
         images = images.to('cuda', non_blocking=True)
         if img_masks is not None:
             img_masks = img_masks.to('cuda', non_blocking=True)
-        stats['data_load'].append(time.time()-last_time)
-        last_time = time.time()
         predictions = model(images)
-        stats['model_infer'].append(time.time()-last_time)
-        last_time = time.time()
         predictions = dataset.postprocess(
             predictions, metadata, img_masks=img_masks, ego_mask_cls_id=len(classes), resize_img=resize_img
         )
@@ -45,8 +39,6 @@ def infer_model(model, dataloader, args, out_writer):
 
         # Transfer to numpy
         predictions = predictions.byte().cpu().numpy()
-        stats['postprocess'].append(time.time()-last_time)
-        last_time = time.time()
 
         if args.show_or_save_mask:
             # If user exits, destroy all windows and break
@@ -62,16 +54,11 @@ def infer_model(model, dataloader, args, out_writer):
                 save_preds_as_masks(predictions, metadata, args.base_path, args.out_path, args.cls_palette, args.out_format)
             else:
                 raise ValueError(f'Unknown out format! ({args.out_format})')
-        stats['save'].append(time.time()-last_time)
-        last_time = time.time()
-        
+
         pbar.update(images.shape[0])
         if args.no_tqdm:
             if pbar.n_runs % args.print_every_n == 0:
                 print(f'Processed {pbar.n_runs} images, at rate {pbar.rate:.2f} imgs/s', flush=True)
-    import numpy as np
-    print({k:np.mean(v) for k, v in stats.items()})
-    print({k:1/np.mean(v) for k, v in stats.items()})
     if args.no_tqdm:
         print(f'Processed {pbar.n_runs} images, at rate {pbar.rate:.2f} imgs/s. Total: {time.time() - pbar.start_t:.2f} sec')
     pbar.close()
