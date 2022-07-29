@@ -4,4 +4,4 @@ output_args:
     preset: lossless
 in_global_args: '-hide_banner -loglevel warning'
 out_global_args: '-hide_banner -loglevel warning'
-max_timeout: 15
+max_timeout: 180
