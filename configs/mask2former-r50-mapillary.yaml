@@ -5,8 +5,11 @@ classes: mapillary
 config_file: configs/mapillary-vistas/semantic-segmentation/maskformer2_R50_bs16_300k.yaml
 opts: []
 weights_path: weights/maskformer2_R50_bs16_300k.pkl
-input_shape: [2048, 1024] # width, height
 img_mean: null # Already fused in the model
 img_std: null # Already fused in the model
-batch_size: 5
-num_workers: 4
+num_workers: 2
+input_shapes:
+  2048,1024: 3
+  1024,512: 10
+  768,384: 10
+  512,512: 16

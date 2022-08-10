@@ -1,4 +1,6 @@
 addict
 numpy
 opencv-contrib-python
+PyYAML
 tqdm
+ffmpeg-python

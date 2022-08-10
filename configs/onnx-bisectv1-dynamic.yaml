@@ -2,9 +2,12 @@ model_type: onnx
 image_format: rgb
 classes: cityscapes
 weights_path: 'weights/bisectv1-dynamic.onnx'
-providers: ['CUDAExecutionProvider', 'CPUExecutionProvider'] # 'TensorrtExecutionProvider'
-input_shape: [2048, 1024] # width, height
+providers: ['CUDAExecutionProvider', 'CPUExecutionProvider'] # 'TensorrtExecutionProvider', 
 img_mean: [123.675, 116.28, 103.53]
 img_std: [58.395, 57.12, 57.375]
-batch_size: 3
-num_workers: 4
+num_workers: 2
+input_shapes:
+  2048,1024: 2
+  1024,512: 2
+  768,384: 2
+  512,512: 2
