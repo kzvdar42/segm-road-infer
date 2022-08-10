@@ -151,7 +151,7 @@ if __name__ == '__main__':
 
     # Load dataset
     dataset = load_dataset(args)
-    print(f'Loaded video, total frames {dataset.len}')
+    print(f'Loaded video, total frames {getattr(dataset, "len", len(dataset))}')
     if args.n_skip_frames:
         print(f'Skipping {args.n_skip_frames} frames each time, {len(dataset)} left')
 
