@@ -32,55 +32,76 @@ Detailed info about configs:
 model_type: torch # model type. Either torch or onnx
 image_format: rgb # input image format. Either rgb or bgr
 use_fp16: True # Set true to use fp16 for inference. Increases speed, and possibly subtle decrease in quality [Only for torch model!]
-classes: mapillary #  on which dataset model was trained. Either mapillary or cityscapes
-config_file: Mask2Former/configs/mapillary-vistas/semantic-segmentation/swin/maskformer2_swin_large_IN21k_384_bs16_300k.yaml # path to the detectron2 model config [for torch model]
+classes: cityscapes # which classes model has. Either mapillary or cityscapes
+config_file: configs/cityscapes/semantic-segmentation/swin/maskformer2_swin_tiny_bs16_90k.yaml # path to the detectron2 model config [for torch model]
 opts: [] # You can ommit this)
-weights_path: weights/sem_swin_large_patch4_window12_384_22k.pkl # path to the model weights
+weights_path: weights/sem-swin-t-cityscapes.pkl # path to the model weights
 providers: ['CUDAExecutionProvider', 'CPUExecutionProvider'] # ONNXRuntime providers
-input_shape: [2048, 1024] # model input shape: width, height
 img_mean: null # Image mean used during model training
 img_std: null # Image std used during model training. Set to [255, 255, 255] if need to normalize input
-batch_size: 3 # Batch size to use by DataLoader
-num_workers: 4 # Number of workers to create by DataLoader
+num_workers: 2 # Number of workers to create by DataLoader
+input_shapes: # mapping between input shape and batch_size, if input shape outside this mapping is provided, it will use the batch size from the first key
+  2048,1024: 5
+  1024,512: 15
 ```
 
 You can try to improve onnx runtime speed, by adding the `TensorrtExecutionProvider`, more info [here](https://onnxruntime.ai/docs/execution-providers/TensorRT-ExecutionProvider.html).
 
 
 ## Run the script
-You can run the script using two models, one for ego vehicle mask, other for whole image segmentation. To do this, change variables in `run.sh`. After that you can simply run in like this:
+To start inference, simply run the `run.sh` script like this:
 ```bash
 ./run.sh in_path out_path
 ```
 
+By default it will use two models, one for ego vehicle extraction and the other one for everything else.
+But you can also change the behaviour of the script by changing next environment variables:
+* `MAIN_MODEL_CONFIG` - main model config filepath
+* `MAIN_INPUT_SHAPE` - input shape for the main model
+* `MAIN_BATCH_SIZE` - batch size for the main model
+* `EGO_INPUT_SHAPE` - input shape for the ego model
+* `EGO_BATCH_SIZE` - batch size for the ego model
+* `EGO_MODEL_CONFIG` - ego model config filepath
+* `SKIP_EGO_VEHICLE` - set to `1`, if you want to skip running ego vehicle model. Useful when running mapillary model, which already includes the ego vehicle class
+* `EGO_MASK_PATH` - path to the folder to which script will save the results
 
 Also, you can manually use the `infer.py` script, here is it's help command:
 ```bash
-usage: python infer.py [-h] [--show] [--apply_ego_mask_from APPLY_EGO_MASK_FROM] [--n_skip_frames N_SKIP_FRAMES] [--only_ego_vehicle]
-                       [--save_vis_to SAVE_VIS_TO] [--window_size WINDOW_SIZE [WINDOW_SIZE ...]]
+usage: python infer.py [-h] [--batch_size BATCH_SIZE] [--input_shape INPUT_SHAPE INPUT_SHAPE] [--out_format {mp4,jpg,png}] [--show] [--apply_ego_mask_from APPLY_EGO_MASK_FROM] [--n_skip_frames N_SKIP_FRAMES] [--only_ego_vehicle] [--skip_processed] [--test]
+                       [--save_vis_to SAVE_VIS_TO] [--window_size WINDOW_SIZE WINDOW_SIZE] [--ffmpeg_setting_file FFMPEG_SETTING_FILE] [--no_tqdm]
                        model_config in_path out_path
 
 positional arguments:
   model_config          path to the model yaml config
-  in_path               path to input folder with images/input videofile. Will either read all images under this path, or load provided
-                        videofile
+  in_path               path to input. It can be either folder/txt file with image paths/videofile.
   out_path              path to save the resulting masks
 
 optional arguments:
   -h, --help            show this help message and exit
+  --batch_size BATCH_SIZE
+                        option to override model batch_size
+  --input_shape INPUT_SHAPE INPUT_SHAPE
+                        option to override model input shape
+  --out_format {mp4,jpg,png}
+                        format for saving the result
   --show                set to visualize predictions
   --apply_ego_mask_from APPLY_EGO_MASK_FROM
                         path to ego masks, will load them and apply to predictions
   --n_skip_frames N_SKIP_FRAMES
                         how many frames to skip during inference [default: 0]
   --only_ego_vehicle    store only ego vehicle class
+  --skip_processed      skip already processed frames
+  --test                test speed on 60 seconds runtime
   --save_vis_to SAVE_VIS_TO
                         path to save the visualized predictions. [default: None]
-  --window_size WINDOW_SIZE [WINDOW_SIZE ...]
-                        window size for visualization
+  --window_size WINDOW_SIZE WINDOW_SIZE
+                        window size for visualization [default: (1280, 720)]
+  --ffmpeg_setting_file FFMPEG_SETTING_FILE
+                        path to ffmpeg settings. [default: `.ffmpeg_settings.yaml`]
+  --no_tqdm             flag to not use tqdm progress bar
 ```
 
-> :warning: Inferencing on videofile is currently slow (approximately 2x times slower)
+> :warning: Inferencing on images is currently slower than on video (approximately 30% slower)
 
 ## Infer results
 If you ran model on images, the results will copy filenames and structure from input folder, but if you ran the script on videofile, results will be in `%05d.png` format.
@@ -90,7 +111,7 @@ Resulting masks will follow class ids from dataset on which model was trained ([
 ## Speed Comparison
 Ran test inference on WSL2 CPU: i5-9500 CPU @ 3.00GHz GPU: 2080ti
 
-Used fp16 (for torch models) and increased batch_size
+Used fp16 (for torch models), input shape 2048 1024 and increased batch_size.
 
 ### Mapillary dataset *(sorted by speed)*
 | Model              | fps   | mIoU	| mIoU (ms+flip) | model type |
@@ -112,6 +133,6 @@ Used fp16 (for torch models) and increased batch_size
 | DeepLabV3+	R-101b-D8 | 2.60	| 80.16 | 81.41          | onnx       |
 
 ## Other info
-* Classes list for corresponding datasets can be found in `cityscapes-classes.txt` and `mapillary-classes.txt`.
+* Classes list for corresponding datasets can be found in `datasets_meta` folder.
 
 * Only models trained on `mapillary` dataset can be used for ego vehicle mask extraction.
