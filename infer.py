@@ -69,6 +69,7 @@ def get_args():
     parser.add_argument('model_config', help='path to the model yaml config')
     parser.add_argument('in_path', help='path to input. It can be either folder/txt file with image paths/videofile.')
     parser.add_argument('out_path', help='path to save the resulting masks')
+    parser.add_argument('--out_cls_mapping', default=None, help='path to save output class mapping to')
     parser.add_argument('--batch_size', type=int, default=None, help='option to override model batch_size')
     parser.add_argument('--input_shape', type=int, nargs=2, default=None, help='option to override model input shape')
     parser.add_argument('--out_format', default='mp4', choices=['mp4', 'jpg', 'png'], help='format for saving the result')
@@ -144,7 +145,9 @@ if __name__ == '__main__':
     )
 
     # Load classes
-    classes, cls_name_to_id, cls_id_to_name, ego_class_ids = get_classes(args.model_cfg.classes)
+    classes, cls_name_to_id, cls_id_to_name, ego_class_ids = get_classes(
+        args.model_cfg.classes, args.apply_ego_mask_from
+    )
     if args.only_ego_vehicle:
         ego_class_ids = torch.from_numpy(ego_class_ids).to(device='cuda', dtype=torch.uint8)[None, ...]
         assert ego_class_ids.shape[-1], 'Model without ego vehicle classes!'
@@ -175,6 +178,12 @@ if __name__ == '__main__':
 
     # Infer model
     infer_model(model, dataloader, args, out_writer)
+
+    # Save class mapping
+    if args.out_cls_mapping is not None:
+        with open(args.out_cls_mapping, 'w') as out_stream:
+            for cls_id, cls_name in cls_id_to_name.items():
+                out_stream.write(f'{cls_id} {cls_name}\n')
 
     # Exit from or kill out writer process
     if out_writer is not None:

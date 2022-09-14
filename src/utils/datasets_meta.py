@@ -49,7 +49,7 @@ datasets_meta = {
     'ego_data': dict(palette=_ego_palette, classes_file_path=['background', 'ego_vehicle']),
 }
 
-def get_classes(dataset_type: str):
+def get_classes(dataset_type: str, add_ego_cls: bool):
     classes = []
     # If provided classes list, apply them
     if isinstance(dataset_type, list):
@@ -61,6 +61,9 @@ def get_classes(dataset_type: str):
         classes_file_path = datasets_meta[dataset_type]['classes_file_path']
         with open(classes_file_path) as in_file:
             classes = [c.strip() for c in in_file.read().split('\n') if c.strip()]
+    
+    if add_ego_cls:
+        classes.append('ego vehicle')
 
     cls_name_to_id = {c:c_id for c_id, c in enumerate(classes)}
     cls_id_to_name = {c_id:c for c, c_id in cls_name_to_id.items()}
