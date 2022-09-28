@@ -188,10 +188,13 @@ if __name__ == '__main__':
     # Exit from or kill out writer process
     if out_writer is not None:
         print('Waiting for ffmpeg to exit...')
+        timeout_limit = None
+        if args.ffmpeg.max_timeout >= 0:
+            timeout_limit = args.ffmpeg.max_timeout
         try:
-            out_writer.communicate(timeout=args.ffmpeg.max_timeout)
+            out_writer.communicate(timeout=timeout_limit)
         except subprocess.TimeoutExpired:
-            print(f'Waited for {args.ffmpeg.max_timeout} seconds. Killing ffmpeg!')
+            print(f'Waited for {timeout_limit} seconds. Killing ffmpeg!')
             out_writer.kill()
             out_writer.communicate()
             print(f'ffmpeg killed with code {out_writer.returncode}')
