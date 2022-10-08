@@ -14,7 +14,7 @@ def ffmpeg_start_in_process(ffmpeg_args, in_filename, scale, codec_name=None):
         .video
         .filter('scale', scale[0], scale[1])
         .filter('setsar', '1')
-        .output('pipe:', format='rawvideo', pix_fmt='yuv420p', vsync='vfr')
+        .output('pipe:', format='rawvideo', pix_fmt='yuv420p', fps_mode='vfr')
         .global_args(*ffmpeg_args.in_global_args.split(' ') if ffmpeg_args.in_global_args else [])
         .run_async(pipe_stdout=True)
     )
