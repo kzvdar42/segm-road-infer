@@ -3,6 +3,6 @@ out_pix_fmt: yuv444p16le  # yuv444p16le yuvj420p
 output_args:
     preset: p7
     tune: lossless
-in_global_args: '-hide_banner -loglevel warning'
+in_global_args: '-hide_banner -loglevel warning -nostdin'
 out_global_args: '-hide_banner -loglevel warning'
-max_timeout: -1
+max_timeout: 15

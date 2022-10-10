@@ -64,7 +64,7 @@ class FfmpegVideoDataset(BaseDataset):
         self.width, self.height = self.input_shape
         assert n_skip_frames == 0, "FfmpegVideoDataset doesn\'t support n_skip_frames"
         self.index = 0
-        self.in_pipe = ffmpeg_start_in_process(cfg.ffmpeg, video_path, self.input_shape, self.codec_name)
+        self.in_popen = ffmpeg_start_in_process(cfg.ffmpeg, video_path, self.input_shape, self.codec_name)
 
     def __len__(self) -> int:
         return self.len
@@ -72,7 +72,7 @@ class FfmpegVideoDataset(BaseDataset):
     def get_next_frame(self, idx: int):
         # read buffer
         assert self.index == idx, "Tried to access frames out of order!"
-        in_bytes = self.in_pipe.stdout.read(self.width * self.height * 3 // 2)
+        in_bytes = self.in_popen.stdout.read(self.width * self.height * 3 // 2)
         self.index += 1
         if not in_bytes:
             raise StopIteration
