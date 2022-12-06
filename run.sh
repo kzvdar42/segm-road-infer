@@ -54,7 +54,7 @@ set -x
 
 # Calculate ego vehicle masks
 APPLY_EGO_MASK_FROM=""
-if [ $SKIP_EGO_VEHICLE == 0 ]; then
+if [ -z "$SKIP_EGO_VEHICLE" ] || [ "$SKIP_EGO_VEHICLE" = 0 ]; then
   echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
   echo "~~~~~~~~~~~~~ Calculating ego vehicle masks ~~~~~~~~~~~~~"
   echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"

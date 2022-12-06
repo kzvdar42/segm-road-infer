@@ -33,9 +33,10 @@ def load_model_config(cfg_path: str) -> addict.Dict:
 class PseudoTqdm:
     """Class to use as in-place replacement for tqdm then you don't need a pbar."""
 
-    def __init__(self):
+    def __init__(self, print_step: int):
         self.start_t = time.time() 
         self.n_runs = 0
+        self.print_step = print_step
 
     @property
     def rate(self):
@@ -43,8 +44,11 @@ class PseudoTqdm:
 
     def update(self, n_runs : int):
         self.n_runs += n_runs
+        if self.n_runs % self.print_step == 0:
+            print(f'Processed {self.n_runs} images, at rate {self.rate:.2f} imgs/s', flush=True)
     
     def close(self):
+        print(f'Processed {self.n_runs} images, at rate {self.rate:.2f} imgs/s. Total: {time.time() - self.start_t:.2f} sec')
         pass
 
 def show_preds(predictions: np.ndarray, metadata: dict, cls_palette: np.ndarray, show: bool = True,

@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import os
 import subprocess
 import time
@@ -19,18 +20,23 @@ from src.utils.infer import (
 from src.utils.datasets_meta import get_classes, get_palette
 
 
-def infer_model(model, dataloader, args, out_writer):
+def infer_model(model, dataloader, args, out_writer, classes, ego_class_ids):
     # XXX: Using pbar like this, because otherwise ffmpeg subprocess wouldn't finish
-    pbar = tqdm(total=len(dataset)) if not args.no_tqdm else PseudoTqdm()
+    if args.no_tqdm:
+        pbar = PseudoTqdm(print_step=args.print_every_n)
+    else:
+        pbar = tqdm(total=len(dataloader.dataset))
     resize_img = args.out_format != 'mp4' and not args.only_ego_vehicle
-    for images, img_masks, metadata in dataloader:
-        if args.test and time.time() - pbar.start_t > 60:
+    # XXX: Using dataloader like this, because since pytorch 1.10 it messes up subprocesses
+    iterator = iter(dataloader)
+    for images, img_masks, metadata in iterator:
+        if args.test and time.time() - pbar.start_t > 5:
             break
         images = images.to('cuda', non_blocking=True)
         if img_masks is not None:
             img_masks = img_masks.to('cuda', non_blocking=True)
         predictions = model(images)
-        predictions = dataset.postprocess(
+        predictions = dataloader.dataset.postprocess(
             predictions, metadata, img_masks=img_masks, ego_mask_cls_id=len(classes), resize_img=resize_img
         )
 
@@ -56,12 +62,11 @@ def infer_model(model, dataloader, args, out_writer):
                 raise ValueError(f'Unknown out format! ({args.out_format})')
 
         pbar.update(images.shape[0])
-        if args.no_tqdm:
-            if pbar.n_runs % args.print_every_n == 0:
-                print(f'Processed {pbar.n_runs} images, at rate {pbar.rate:.2f} imgs/s', flush=True)
-    if args.no_tqdm:
-        print(f'Processed {pbar.n_runs} images, at rate {pbar.rate:.2f} imgs/s. Total: {time.time() - pbar.start_t:.2f} sec')
     pbar.close()
+    if hasattr(iterator, '_clean_up_worker'):
+        for w in iterator._workers:
+            iterator._clean_up_worker(w)
+    del iterator
 
 
 def get_args():
@@ -177,7 +182,7 @@ if __name__ == '__main__':
         model(torch.rand((args.model_cfg.batch_size, 3, *args.model_cfg.input_shape[::-1]), device='cuda'))
 
     # Infer model
-    infer_model(model, dataloader, args, out_writer)
+    infer_model(model, dataloader, args, out_writer, classes, ego_class_ids)
 
     # Save class mapping
     if args.out_cls_mapping is not None:
@@ -196,9 +201,6 @@ if __name__ == '__main__':
         except subprocess.TimeoutExpired:
             print(f'Waited for {timeout_limit} seconds. Killing ffmpeg!')
             out_writer.kill()
-            out_writer.communicate()
-            print(f'ffmpeg killed with code {out_writer.returncode}')
-        else:
-            out_writer.communicate()
-            print(f'ffmpeg succesfully exited with code {out_writer.returncode}')
+        finally:
+            print(f'ffmpeg exited with code {out_writer.returncode}')
     print(f'Total script time: {time.time() - script_start_time:.2f}')
