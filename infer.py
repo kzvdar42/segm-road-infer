@@ -20,7 +20,7 @@ from src.utils.infer import (
 from src.utils.datasets_meta import get_classes, get_palette
 
 
-def infer_model(model, dataloader, args, out_writer, classes, ego_class_ids):
+def infer_model(model, dataloader, args, out_writer, ego_class_ids):
     # XXX: Using pbar like this, because otherwise ffmpeg subprocess wouldn't finish
     if args.no_tqdm:
         pbar = PseudoTqdm(print_step=args.print_every_n)
@@ -37,7 +37,8 @@ def infer_model(model, dataloader, args, out_writer, classes, ego_class_ids):
             img_masks = img_masks.to('cuda', non_blocking=True)
         predictions = model(images)
         predictions = dataloader.dataset.postprocess(
-            predictions, metadata, img_masks=img_masks, ego_mask_cls_id=len(classes), resize_img=resize_img
+            predictions, metadata, img_masks=img_masks,
+            ego_mask_cls_id=ego_class_ids[-1], resize_img=resize_img
         )
 
         if args.only_ego_vehicle:
@@ -182,7 +183,7 @@ if __name__ == '__main__':
         model(torch.rand((args.model_cfg.batch_size, 3, *args.model_cfg.input_shape[::-1]), device='cuda'))
 
     # Infer model
-    infer_model(model, dataloader, args, out_writer, classes, ego_class_ids)
+    infer_model(model, dataloader, args, out_writer, ego_class_ids)
 
     # Save class mapping
     if args.out_cls_mapping is not None:
