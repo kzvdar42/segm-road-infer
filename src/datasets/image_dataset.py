@@ -14,7 +14,7 @@ except:
 from src.datasets.base_dataset import BaseDataset
 
 class ImageDataset(BaseDataset):
-    
+
     def __init__(self, image_paths: List[str], cfg: addict.Dict, return_raw_imgs: bool = False):
         super().__init__(cfg, image_load_format='bgr', return_raw_imgs=return_raw_imgs)
         self.image_paths = image_paths
@@ -23,6 +23,8 @@ class ImageDataset(BaseDataset):
         return len(self.image_paths)
 
     def imread(self, img_path: str) -> np.ndarray:
+        if img_path.endswith('.png'):
+            return cv2.imread(img_path)
         if use_turbojpeg:
             # TurboJPEG reads in BGR format
             with open(img_path, 'rb') as in_file:

@@ -6,6 +6,7 @@ import torch
 from torch.nn import functional as F
 
 from src.infer.base_predictor import BasePredictor
+from src.utils.torch import fuse_all_conv_bn
 
 
 def stripped_forward(self, images):
@@ -68,6 +69,7 @@ class DetectronPredictor(BasePredictor):
         from detectron2.modeling import build_model
         from detectron2.checkpoint import DetectionCheckpointer
         self.model = build_model(self.det2_cfg)
+        fuse_all_conv_bn(self.model)
         self.model.eval()
         self.model._forward = self.model.forward
         self.model.forward = types.MethodType(stripped_forward, self.model)
