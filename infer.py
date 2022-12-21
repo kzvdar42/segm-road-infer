@@ -26,6 +26,8 @@ def infer_model(model, dataloader, args, out_writer, ego_class_ids):
         pbar = PseudoTqdm(print_step=args.print_every_n)
     else:
         pbar = tqdm(total=len(dataloader.dataset))
+    # take last ego_class_id as id for masking predictions
+    ego_mask_cls_id = ego_class_ids[-1] if len(ego_class_ids) else None
     resize_img = args.out_format != 'mp4' and not args.only_ego_vehicle
     # XXX: Using dataloader like this, because since pytorch 1.10 it messes up subprocesses
     iterator = iter(dataloader)
@@ -38,7 +40,7 @@ def infer_model(model, dataloader, args, out_writer, ego_class_ids):
         predictions = model(images)
         predictions = dataloader.dataset.postprocess(
             predictions, metadata, img_masks=img_masks,
-            ego_mask_cls_id=ego_class_ids[-1], resize_img=resize_img
+            ego_mask_cls_id=ego_mask_cls_id, resize_img=resize_img
         )
 
         if args.only_ego_vehicle:
