@@ -105,7 +105,9 @@ def get_args():
     if args.n_skip_frames < 0:
         if not args.in_path.endswith('.mp4'):
             args.n_skip_frames = 30
-        args.n_skip_frames = abs(args.n_skip_frames) * round(FfmpegVideoDataset.get_video_metadata(args.in_path)[-2])
+        else:
+            fps = round(FfmpegVideoDataset.get_video_metadata(args.in_path)[-2])
+            args.n_skip_frames = abs(args.n_skip_frames) * fps
 
     args.ffmpeg = default_ffmpeg_args()
     if os.path.isfile(args.ffmpeg_setting_file):
