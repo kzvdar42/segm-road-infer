@@ -1,5 +1,3 @@
-from typing import List
-
 import addict
 import cv2
 import numpy as np
@@ -15,7 +13,7 @@ from src.datasets.base_dataset import BaseDataset
 
 class ImageDataset(BaseDataset):
 
-    def __init__(self, image_paths: List[str], cfg: addict.Dict, return_raw_imgs: bool = False):
+    def __init__(self, image_paths: list[str], cfg: addict.Dict, return_raw_imgs: bool = False):
         super().__init__(cfg, image_load_format='bgr', return_raw_imgs=return_raw_imgs)
         self.image_paths = image_paths
 

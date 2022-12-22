@@ -1,7 +1,6 @@
 from abc import ABC
 import os
 from functools import lru_cache
-from typing import Dict
 
 import addict
 from PIL import Image
@@ -11,9 +10,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 
-from src.utils.index import (
-    index_ego_masks
-)
+from src.utils.index import index_ego_masks
 
 class BaseDataset(Dataset, ABC):
 
@@ -51,7 +48,7 @@ class BaseDataset(Dataset, ABC):
     @img_mask.setter
     def img_mask(self, img_mask):
         self._img_mask = cv2.resize(img_mask, self.input_shape, interpolation=cv2.INTER_NEAREST)
-    
+
     @lru_cache(maxsize=32)
     def cached_load_mask(self, mask_path: str):
         img_mask = np.array(Image.open(mask_path)) # cv2.imread(mask_path, -1)
@@ -151,7 +148,7 @@ class BaseDataset(Dataset, ABC):
         return images, img_masks, metadata
 
     @classmethod
-    def postprocess(cls, preds: torch.Tensor, metadata: Dict, img_masks: torch.Tensor,
+    def postprocess(cls, preds: torch.Tensor, metadata: dict, img_masks: torch.Tensor,
                     ego_mask_cls_id: int, resize_img: bool = False) -> torch.Tensor:
         """Reshape predictions back to original image shape."""
         assert len(preds) == len(metadata)

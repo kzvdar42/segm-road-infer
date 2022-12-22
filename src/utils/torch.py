@@ -1,6 +1,7 @@
 from torch import nn
 from torch.nn.utils.fusion import fuse_conv_bn_eval
 
+
 def fuse_all_conv_bn(model):
     """Fuse all consecutive Conv2d & BatchNorm2d layer pairs.
     """
