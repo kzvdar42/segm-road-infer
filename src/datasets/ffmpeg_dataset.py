@@ -1,4 +1,5 @@
 import os
+import warnings
 
 import addict
 import numpy as np
@@ -28,9 +29,12 @@ class FfmpegVideoDataset(BaseDataset):
         # read buffer
         assert self.index == idx, "Tried to access frames out of order!"
         in_bytes = self.in_popen.stdout.read(self.width * self.height * 3 // 2)
-        self.index += 1
         if not in_bytes:
+            if self.index < self.len:
+                warnings.warn(f'FFMPEG failed to read all {self.len} frames, stopped at {self.index}') 
             raise StopIteration
+        else:
+            self.index += 1
         # decode buffer
         # img = decode_to_torch(in_bytes, self.height, self.width, device)
         return decode_to_numpy(in_bytes, self.height, self.width).astype(np.float32)
