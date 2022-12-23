@@ -190,3 +190,5 @@ if __name__ == '__main__':
 
     out_writer.close()
     print(f'Total script time: {time.time() - script_start_time:.2f}')
+    # exit with the exit code of output writer
+    exit(out_writer.exit_code)

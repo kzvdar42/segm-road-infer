@@ -1,4 +1,5 @@
 import time
+from typing import Optional
 import threading, queue
 
 import addict
@@ -12,7 +13,8 @@ from .base import AbstractWriter
 
 
 def save_preds_as_masks(predictions: np.ndarray, metadata: dict, in_base_path: str,
-                        out_path: str, ext: str, cls_palette: np.ndarray = None) -> None:
+                        out_path: str, ext: str,
+                        cls_palette: Optional[np.ndarray] = None) -> None:
     """Save predicted mask."""
     for pred, meta in zip(predictions, metadata):
         pred_out_path = get_out_path(meta['image_path'], out_path, in_base_path, ext)
@@ -72,10 +74,15 @@ class PillowWriter(AbstractWriter):
         self.out_path = cfg.out_path
         self.out_width, self.out_height = cfg.out_width, cfg.out_height
         self.ext = cfg.ext
+        self._exit_code = None
         self.cls_palette = cfg.get('cls_palette')
         self.write_thread, self.out_queue = create_img_writer_thread(
             self.in_base_path, self.out_path, self.ext, self.cls_palette
         )
+
+    @property
+    def exit_code(self) -> Optional[int]:
+        return self._exit_code
 
     def __call__(self, predictions: np.ndarray, metadata: dict) -> None:
         self.out_queue.put_nowait((predictions, metadata))
@@ -85,3 +92,4 @@ class PillowWriter(AbstractWriter):
         print('Waiting for pillow writing thread to exit...')
         self.out_queue.put(None)
         self.write_thread.join()
+        self._exit_code = 1

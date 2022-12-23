@@ -1,7 +1,7 @@
 import subprocess
+from typing import Optional
 
 import addict
-import cv2
 import numpy as np
 
 from src.utils.ffmpeg import ffmpeg_start_out_process
@@ -20,6 +20,10 @@ class FfmpegWriter(AbstractWriter):
                 self.out_width, self.out_height, self.cfg.out_fps
             )
         return self._write_process
+
+    @property
+    def exit_code(self) -> Optional[int]:
+        return self.write_process.returncode
 
     def _start_process(self, cfg: addict.Dict):
         self.img_num_bits: str = cfg.get('img_num_bits', '10bit')
