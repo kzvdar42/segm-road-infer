@@ -92,4 +92,4 @@ class PillowWriter(AbstractWriter):
         print('Waiting for pillow writing thread to exit...')
         self.out_queue.put(None)
         self.write_thread.join()
-        self._exit_code = 1
+        self._exit_code = 0
