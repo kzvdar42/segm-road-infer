@@ -191,4 +191,6 @@ if __name__ == '__main__':
     out_writer.close()
     print(f'Total script time: {time.time() - script_start_time:.2f}')
     # exit with the exit code of output writer
+    if out_writer.exit_code != 0:
+        print('Writer exited with error code', out_writer.exit_code)
     exit(out_writer.exit_code)
