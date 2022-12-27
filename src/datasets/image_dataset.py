@@ -1,3 +1,5 @@
+import warnings
+
 import addict
 import cv2
 import numpy as np
@@ -8,6 +10,10 @@ try:
     use_turbojpeg = True
 except:
     use_turbojpeg = False
+    warnings.warn(
+        'turbojpeg is not installed, image loading is gonna '
+        'be slower! Please, install turbojpeg'
+    )
 
 from src.datasets.base_dataset import BaseDataset
 
