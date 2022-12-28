@@ -44,7 +44,7 @@ class VideoDataset(BaseDataset):
 
     def __getitem__(self, index: int) -> tuple:
         index = index * max(1, self.n_skip_frames)
-        img = self.get_frame(index)#.astype(np.float32)
+        img = self.get_frame(index).astype(np.float32)
         img_orig = img.copy() if self.return_raw_imgs else None
 
         # Add img_path for consistency

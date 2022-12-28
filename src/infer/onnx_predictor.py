@@ -36,12 +36,21 @@ class ONNXPredictor(BasePredictor):
     def __call__(self, in_batch):
         # Create output tensor
         if self.seg_output is None or self.seg_output.shape[1] != in_batch.shape[0]:
-            # self.seg_output = torch.empty((1, 2, 64, 64), dtype=torch.int64, device='cuda')
-            self.seg_output = torch.empty((1, in_batch.shape[0], in_batch.shape[-2], in_batch.shape[-1]), dtype=torch.int64, device='cuda')
-            self.io_binding.bind_output(name=self.output_name, device_type='cuda', device_id=0, element_type=np.float32, shape=tuple(self.seg_output.shape), buffer_ptr=self.seg_output.data_ptr())
+            self.seg_output = torch.empty(
+                (1, in_batch.shape[0], in_batch.shape[-2], in_batch.shape[-1]),
+                dtype=torch.int64, device='cuda'
+            )
+            self.io_binding.bind_output(
+                name=self.output_name, device_type='cuda', device_id=0,
+                element_type=np.int64, shape=tuple(self.seg_output.shape),
+                buffer_ptr=self.seg_output.data_ptr()
+            )
 
-        self.io_binding.bind_input(name=self.input_name, device_type='cuda', device_id=0, element_type=np.float32, shape=tuple(in_batch.shape), buffer_ptr=in_batch.data_ptr())
+        self.io_binding.bind_input(
+            name=self.input_name, device_type='cuda', device_id=0,
+            element_type=np.float32, shape=tuple(in_batch.shape),
+            buffer_ptr=in_batch.data_ptr()
+        )
         torch.cuda.synchronize() # sync for non_blocking data transfer
         self.ort_session.run_with_iobinding(self.io_binding)
         return self.seg_output[0]
-        # return self.seg_output.argmax(1)#[0]
