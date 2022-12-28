@@ -42,7 +42,7 @@ class ImageDataset(BaseDataset):
         img_mask = self.load_nearest_mask(img_path)
 
         # Read and transform the image
-        img = self.imread(img_path)#.astype(np.float32)
+        img = self.imread(img_path).astype(np.float32)
         img_orig = img.copy() if self.return_raw_imgs else None
         height, width = img.shape[:2]
         img = self.preprocess_numpy(img, img_mask)

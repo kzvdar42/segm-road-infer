@@ -37,7 +37,7 @@ class FfmpegVideoDataset(BaseDataset):
             self.index += 1
         # decode buffer
         # img = decode_to_torch(in_bytes, self.height, self.width, device)
-        return decode_to_numpy(in_bytes, self.height, self.width).astype(np.float32)
+        return decode_to_numpy(in_bytes, self.height, self.width)
 
     def __getitem__(self, idx) -> dict:
         # add img_path for consistency
@@ -47,7 +47,7 @@ class FfmpegVideoDataset(BaseDataset):
         img_mask = self.load_nearest_mask(img_path)
 
         # get frame and transform (no need to resize, as it's already done in ffmpeg)
-        img = self.get_next_frame(idx)
+        img = self.get_next_frame(idx).astype(np.float32)
         img_orig = img.copy() if self.return_raw_imgs else None
         img = self.preprocess_numpy(img, img_mask, resize=False)
         if img_mask is not None:
