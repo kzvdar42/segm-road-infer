@@ -1,5 +1,4 @@
 import os
-from typing import Dict
 
 import addict
 import cv2
@@ -43,7 +42,7 @@ class VideoDataset(BaseDataset):
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, index)
         return self.cap.read()[1]
 
-    def __getitem__(self, index: int) -> Dict:
+    def __getitem__(self, index: int) -> tuple:
         index = index * max(1, self.n_skip_frames)
         img = self.get_frame(index)#.astype(np.float32)
         img_orig = img.copy() if self.return_raw_imgs else None

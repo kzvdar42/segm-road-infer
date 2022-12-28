@@ -1,4 +1,4 @@
-from typing import List
+import warnings
 
 import addict
 import cv2
@@ -10,12 +10,16 @@ try:
     use_turbojpeg = True
 except:
     use_turbojpeg = False
+    warnings.warn(
+        'turbojpeg is not installed, image loading is gonna '
+        'be slower! Please, install turbojpeg'
+    )
 
 from src.datasets.base_dataset import BaseDataset
 
 class ImageDataset(BaseDataset):
 
-    def __init__(self, image_paths: List[str], cfg: addict.Dict, return_raw_imgs: bool = False):
+    def __init__(self, image_paths: list[str], cfg: addict.Dict, return_raw_imgs: bool = False):
         super().__init__(cfg, image_load_format='bgr', return_raw_imgs=return_raw_imgs)
         self.image_paths = image_paths
 
