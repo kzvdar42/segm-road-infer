@@ -37,15 +37,16 @@ def save_preds_as_masks(predictions: np.ndarray, metadata: dict, in_base_path: s
         except OSError:
             print(f'Failed to save!', pred_out_path, type(pred), pred.shape)
 
-def create_img_writer_thread(in_base_path: str, out_path: str,
-                             ext: str, cls_palette: np.ndarray = None):
-    """Create image writer thread.
+
+def create_img_writer_threads(n_threads: int, in_base_path: str, out_path: str,
+                             ext: str, cls_palette: Optional[np.ndarray] = None) -> tuple[list[threading.Thread], queue.Queue]:
+    """Create image writer threads.
     
-    Returns created thread and it's input queue.
+    Returns created threads and their input queue.
     """
     q = queue.Queue()
 
-    def worker(in_base_path: str, out_path: str, ext: str, cls_palette: np.ndarray = None):
+    def worker(in_base_path: str, out_path: str, ext: str, cls_palette: Optional[np.ndarray] = None):
         while True:
             try:
                 data = q.get_nowait()
@@ -59,9 +60,12 @@ def create_img_writer_thread(in_base_path: str, out_path: str,
                 continue
 
     # Turn-on the worker thread.
-    thread = threading.Thread(target=worker, args=[in_base_path, out_path, ext, cls_palette], daemon=False)
-    thread.start()
-    return thread, q
+    threads = []
+    for _ in range(n_threads):
+        thread = threading.Thread(target=worker, args=[in_base_path, out_path, ext, cls_palette], daemon=False)
+        thread.start()
+        threads.append(thread)
+    return threads, q
 
 class PillowWriter(AbstractWriter):
         
@@ -76,8 +80,9 @@ class PillowWriter(AbstractWriter):
         self.ext = cfg.ext
         self._exit_code = None
         self.cls_palette = cfg.get('cls_palette')
-        self.write_thread, self.out_queue = create_img_writer_thread(
-            self.in_base_path, self.out_path, self.ext, self.cls_palette
+        self.n_threads = cfg.n_threads
+        self.write_threads, self.out_queue = create_img_writer_threads(
+            self.n_threads, self.in_base_path, self.out_path, self.ext, self.cls_palette
         )
 
     @property
@@ -88,8 +93,10 @@ class PillowWriter(AbstractWriter):
         self.out_queue.put_nowait((predictions, metadata))
 
     def close(self) -> None:
-        # Exit from or kill out writer thread
-        print('Waiting for pillow writing thread to exit...')
-        self.out_queue.put(None)
-        self.write_thread.join()
+        # Exit from or kill out writer threads
+        print('Waiting for pillow writing threads to exit...')
+        for _ in range(self.n_threads):
+            self.out_queue.put(None)
+        for thread in self.write_threads:
+            thread.join()
         self._exit_code = 0

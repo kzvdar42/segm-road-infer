@@ -21,6 +21,7 @@ def create_writer(args, dataset) -> AbstractWriter:
     if args.out_format == 'png':
         return PillowWriter(cfg=addict.Dict(
             in_base_path=args.in_base_path, out_path=args.out_path, ext=args.out_format,
-            out_width=args.in_width, out_height=args.in_height, img_num_bits='8bit'
+            out_width=args.in_width, out_height=args.in_height, img_num_bits='8bit',
+            n_threads=args.n_out_threads,
         ))
     raise ValueError(f'Not supported output format! ({args.out_format})')

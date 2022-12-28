@@ -73,6 +73,7 @@ def get_args():
     parser.add_argument('--batch_size', type=int, default=None, help='option to override model batch_size')
     parser.add_argument('--input_shape', type=int, nargs=2, default=None, help='option to override model input shape')
     parser.add_argument('--out_format', default='auto', choices=['mp4', 'png', 'auto'], help='format for saving the result')
+    parser.add_argument('--n_out_threads', default=2, type=int, help='number of threads used to write images (for png)')
     parser.add_argument('--show', action='store_true', help='set to visualize predictions')
     parser.add_argument('--apply_ego_mask_from', help='path to ego masks, will load them and apply to predictions')
     parser.add_argument('--n_skip_frames', type=int, default=0, help='how many frames to skip during inference [default: 0]')
