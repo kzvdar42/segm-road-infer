@@ -189,7 +189,10 @@ if __name__ == '__main__':
             for cls_id, cls_name in cls_id_to_name.items():
                 out_stream.write(f'{cls_id} {cls_name}\n')
 
+    writer_wait_start_time = time.time()
     out_writer.close()
+    print(f'Waited for writer to end for: {time.time() - writer_wait_start_time:.2f}')
+
     print(f'Total script time: {time.time() - script_start_time:.2f}')
     # exit with the exit code of output writer
     if out_writer.exit_code != 0:
