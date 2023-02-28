@@ -1,18 +1,18 @@
 bird
-ground animal
+ground_animal
 curb
 fence
-guard rail
+guard_rail
 barrier
 wall
-bike lane
-crosswalk - plain
-curb cut
+bike_lane
+crosswalk_plain
+curb_cut
 parking
-pedestrian area
-rail track
+pedestrian_area
+rail_track
 road
-service lane
+service_lane
 sidewalk
 bridge
 building
@@ -20,9 +20,9 @@ tunnel
 person
 bicyclist
 motorcyclist
-other rider
-lane marking - crosswalk
-lane marking - general
+other_rider
+lane_marking_crosswalk
+lane_marking_general
 mountain
 sand
 sky
@@ -32,34 +32,34 @@ vegetation
 water
 banner
 bench
-bike rack
+bike_rack
 billboard
-catch basin
-cctv camera
-fire hydrant
-junction box
+catch_basin
+cctv_camera
+fire_hydrant
+junction_box
 mailbox
 manhole
-phone booth
+phone_booth
 pothole
-street light
+street_light
 pole
-traffic sign frame
-utility pole
-traffic light
-traffic sign (back)
-traffic sign (front)
-trash can
+traffic_sign_frame
+utility_pole
+traffic_light
+traffic_sign_back
+traffic_sign_front
+trash_can
 bicycle
 boat
 bus
 car
 caravan
 motorcycle
-on rails
-other vehicle
+on_rails
+other_vehicle
 trailer
 truck
-wheeled slow
-car mount
-ego vehicle
+wheeled_slow
+car_mount
+ego_vehicle

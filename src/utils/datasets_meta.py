@@ -63,13 +63,13 @@ def get_classes(dataset_type: str, add_ego_cls: bool):
             classes = [c.strip() for c in in_file.read().split('\n') if c.strip()]
     
     if add_ego_cls:
-        classes.append('ego vehicle')
+        classes.append('ego_vehicle')
 
     cls_name_to_id = {c:c_id for c_id, c in enumerate(classes)}
     cls_id_to_name = {c_id:c for c, c_id in cls_name_to_id.items()}
     
     ego_class_ids = np.array([
-        cls_name_to_id[cls_name] for cls_name in ['ego vehicle', 'car mount', 'ego-vehicle', 'car-mount'] if cls_name in cls_name_to_id
+        cls_name_to_id[cls_name] for cls_name in ['ego_vehicle', 'car_mount'] if cls_name in cls_name_to_id
     ])
     return classes, cls_name_to_id, cls_id_to_name, ego_class_ids
 
