@@ -1,0 +1,11 @@
+model_type: openvino
+image_format: bgr
+classes: cityscapes+ego
+weights_path: 'weights/openvino/intel/semantic-segmentation-adas-0001/FP16/semantic-segmentation-adas-0001.xml'
+threads_num: 4 # model
+device: CPU
+img_mean: null # Already fused in the model
+img_std: null # Already fused in the model
+num_workers: 2 # dataloader
+input_shapes:
+  2048,1024: 2
