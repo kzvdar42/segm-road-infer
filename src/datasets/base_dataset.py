@@ -1,4 +1,4 @@
-from abc import ABC
+from abc import ABC, abstractmethod
 import os
 from functools import lru_cache
 
@@ -38,7 +38,7 @@ class BaseDataset(Dataset, ABC):
             self.img_stdinv = 1 / np.array(cfg.model_cfg.img_std, dtype=np.float64).reshape(1, -1)
             # self.img_mean = torch.FloatTensor(cfg.model_cfg.img_mean).view(1,1,1,-1)
             # self.img_std = torch.FloatTensor(cfg.model_cfg.img_std).view(1,1,1,-1)
-        assert self.model_type in ['onnx', 'torch']
+        assert self.model_type in ['onnx', 'torch', 'openvino']
         assert self.image_format in ['rgb', 'bgr']
 
     @property
@@ -72,6 +72,10 @@ class BaseDataset(Dataset, ABC):
         if ego_mask_rel_path in self.img_name_to_ego_mask_paths:
             self._img_mask = self.cached_load_mask(self.img_name_to_ego_mask_paths[ego_mask_rel_path])
         return self.img_mask
+
+    @abstractmethod
+    def __len__(self):
+        pass
 
     def preprocess_numpy(self, img: np.ndarray, img_mask: np.ndarray = None,
                    resize : bool = True) -> torch.Tensor:
