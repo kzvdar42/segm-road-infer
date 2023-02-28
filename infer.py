@@ -76,7 +76,7 @@ def get_args():
     parser.add_argument('--n_out_threads', default=2, type=int, help='number of threads used to write images (for png)')
     parser.add_argument('--show', action='store_true', help='set to visualize predictions')
     parser.add_argument('--apply_ego_mask_from', help='path to ego masks, will load them and apply to predictions')
-    parser.add_argument('--n_skip_frames', type=int, default=0, help='how many frames to skip during inference [default: 0]')
+    parser.add_argument('--n_skip_frames', type=float, default=0, help='how many frames to skip during inference [default: 0]')
     parser.add_argument('--only_ego_vehicle', action='store_true', help='store only ego vehicle class')
     parser.add_argument('--skip_processed', action='store_true', help='skip already processed frames')
     parser.add_argument('--test', action='store_true', help='test speed on 60 seconds runtime')
@@ -111,7 +111,7 @@ def get_args():
     # if n_skip_frames < 0, set automatically to 1 fps
     if args.n_skip_frames < 0:
         if 'in_fps' in args:
-            args.n_skip_frames = abs(args.n_skip_frames) * args.in_fps
+            args.n_skip_frames = int(abs(args.n_skip_frames) * args.in_fps)
         else:
             args.n_skip_frames = 30
 
